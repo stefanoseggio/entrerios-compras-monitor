@@ -1,0 +1,78 @@
+{
+    "$schema": "https://apify.com/schemas/v1/input.ide.json",
+    "title": "Entre Rios Compras Monitor Configuration",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "estado": {
+            "title": "Status filter",
+            "type": "string",
+            "description": "Filter by process status. Leave blank (default) to pull every status in one request - the site's own union of all 4, verified live to be far larger than any single status alone.",
+            "editor": "select",
+            "enum": ["", "1", "2", "3", "4"],
+            "enumTitles": [
+                "All statuses (default)",
+                "Proxima Apertura (upcoming opening)",
+                "En proceso de Evaluacion (under evaluation)",
+                "Realizada (completed)",
+                "Fracasada (failed/void)"
+            ],
+            "default": ""
+        },
+        "tipoLicitacion": {
+            "title": "Procedure type filter",
+            "type": "string",
+            "description": "Filter by contracting procedure type. Leave blank for all types.",
+            "editor": "select",
+            "enum": ["", "1", "2", "3", "4"],
+            "enumTitles": [
+                "All types (default)",
+                "Licitacion Privada",
+                "Licitacion Publica",
+                "Solicitud de Cotizacion",
+                "Contratacion Directa"
+            ],
+            "default": ""
+        },
+        "organismo": {
+            "title": "Organism filter",
+            "type": "string",
+            "description": "Filter by issuing organism. Leave blank for all organisms.",
+            "editor": "select",
+            "enum": ["", "1", "3", "4", "5", "6", "7", "8", "9"],
+            "enumTitles": [
+                "All organisms (default)",
+                "Unidad Central de Contrataciones",
+                "Ministerio de Desarrollo Social",
+                "Consejo General de Educacion",
+                "Administradora Tributaria de Entre Rios",
+                "UADER",
+                "Oficina de Compras y Asesoramiento - Poder Judicial de Entre Rios",
+                "Ministerio de Salud",
+                "Direccion Provincial de Vialidad"
+            ],
+            "default": ""
+        },
+        "anio": {
+            "title": "Year filter",
+            "type": "string",
+            "description": "Filter by year, e.g. \"2025\". Leave blank for all years (data goes back to at least 2004).",
+            "editor": "textfield",
+            "default": ""
+        },
+        "palabra": {
+            "title": "Keyword filter",
+            "type": "string",
+            "description": "Free-text keyword filter, matched server-side the same way the site's own \"Palabra\" search box works.",
+            "editor": "textfield",
+            "default": ""
+        },
+        "maxItems": {
+            "title": "Max items",
+            "type": "integer",
+            "description": "Hard cap on the number of tenders returned this run. The full unfiltered backlog is over 5000 rows (verified live) - narrow with the filters above or raise this cap to pull all of it.",
+            "default": 1000,
+            "minimum": 1
+        }
+    }
+}

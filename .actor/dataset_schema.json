@@ -1,0 +1,41 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "actorSpecification": 1,
+    "title": "Dataset Schema",
+    "fields": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "title": "ID",
+                "type": "string",
+                "description": "Stable hash of procedimiento+objeto+destino+organismo - the site has no native row id."
+            },
+            "procedimiento": { "title": "Procedimiento", "type": "string" },
+            "anioProcedimiento": { "title": "Anio", "type": ["string", "null"] },
+            "objeto": { "title": "Objeto", "type": "string" },
+            "destino": { "title": "Destino", "type": "string" },
+            "organismo": { "title": "Organismo", "type": "string" },
+            "estado": { "title": "Estado", "type": "string" },
+            "scrapedAt": { "title": "Scraped at", "type": "string" }
+        }
+    },
+    "views": {
+        "overview": {
+            "title": "Overview",
+            "transformation": {
+                "fields": ["procedimiento", "anioProcedimiento", "objeto", "destino", "organismo", "estado"]
+            },
+            "display": {
+                "component": "table",
+                "columns": [
+                    { "label": "Procedimiento", "format": "text", "field": "procedimiento" },
+                    { "label": "Anio", "format": "text", "field": "anioProcedimiento" },
+                    { "label": "Objeto", "format": "text", "field": "objeto" },
+                    { "label": "Destino", "format": "text", "field": "destino" },
+                    { "label": "Organismo", "format": "text", "field": "organismo" },
+                    { "label": "Estado", "format": "text", "field": "estado" }
+                ]
+            }
+        }
+    }
+}
