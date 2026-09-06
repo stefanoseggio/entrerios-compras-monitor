@@ -176,6 +176,145 @@ silently misparse a meaningful fraction of real rows. Instead:
     - zero `<a href>` inside `#tabla-resultados`) - the 5 listing fields are
       the entirety of what this endpoint publishes.
 
+## Delta Engine retrofit (2026-09-06)
+
+Added `onlyNew` (delta mode) and `dateRange`, and standardized the output
+envelope (`record_id`/`event_type`/`scraped_at`/`is_new`/`source_url`) to
+match the shape shipped on the fleet's UK HSE Enforcement Monitor actor.
+Every decision below was checked against this actor's real, already-verified
+architecture (see the sections above) rather than assumed from the template.
+
+### Early-stop pagination vs. safe post-filter - decided: safe post-filter
+
+This actor does **not** have page-level pagination to short-circuit at all -
+a single blank-`estado` POST already returns the entire matching backlog in
+one response (see "Architecture" above; unchanged by this retrofit). So
+"early-stop once N consecutive pages contain zero unseen ids" has no
+mechanism to attach to here: there is exactly one page, always.
+
+On top of that, the ordering itself was checked live and is **not**
+newest-first - if anything it leans oldest-first:
+
+- The real, unfiltered 5505-row fixture (`licitaciones_todas.html`) and a
+  fresh live pull made 2026-09-06 both start with `Licitación Privada /2018`
+  and `.../2017` rows and end with 2025 rows, with the trailing-year sample
+  climbing monotonically through the middle of the response (2017/2018 at
+  the start, 2022 by row ~2750, 2025 at the end - checked in both the fixture
+  and a live re-pull today).
+- There is no per-row id or date attribute in the raw HTML at all (checked
+  the `<tr>`/`<td>` markup directly - no `data-*`, no hidden id) to hang any
+  ordering guarantee on even if we wanted one.
+
+Given both facts - no pagination to stop within, and the one ordering signal
+that does exist pointing away from newest-first - `onlyNew` is implemented
+as a **safe post-filter**: `fetchTenders` still fetches the entire backlog
+exactly as it does without `onlyNew` (see `src/main.ts`), and filtering to
+unseen `record_id`s happens afterward (`src/delta.ts`). `test/delta.test.ts`
+asserts the mocked HTTP layer is called exactly once even when every id is
+already seen, to prove this isn't secretly truncating the fetch.
+
+### `dateRange` - decided: documented no-op for this actor
+
+This source publishes **no per-record date field anywhere** - not new
+information from this pass, already documented above under "Known scope
+limits" from the 2026-09-04 recon (no `fechaApertura`, no per-tender detail
+page). Re-checked directly against the real `<thead>` on 2026-09-06: the
+only columns are Procedimiento/Objeto/Destino/Estado/Organismo. The one
+"Fecha" string anywhere in the page is `Fecha de consulta` - a client-side
+"as of" render timestamp for the whole page, not a per-record field.
+
+Given that, `dateRange` cannot filter against anything real for this domain.
+Faking it against `scraped_at` (identical for every row in a run - would
+just pass or fail everything, never a meaningful per-tender distinction) or
+`anioProcedimiento` (a full calendar year from free text - comparing a year
+like "2025" to a 24h/7d/30d window is nonsensical) would be exactly the
+"silently shipping a misleading filter" the retrofit brief warns against. So
+`dateRange` is kept in the input schema (shape consistency with the rest of
+the portfolio) but implemented as a disclosed no-op: `src/dateRangeFilter.ts`
+logs a warning and returns every record unchanged whenever it's set. This is
+a genuine architecture-driven deviation from the general contract, not a
+shortcut - documented in the input schema description, the README, and here.
+
+`test/delta.test.ts`'s dateRange coverage is adapted accordingly: instead of
+"excludes out-of-window records" (impossible to test honestly - there is no
+window-shaped field to exclude by), it asserts the actual, disclosed
+behavior - records pass through unchanged for every window value.
+
+### `record_id` and `event_type` choices
+
+- **`record_id`**: reused the existing `id` field verbatim (same sha1 of
+  `procedimiento|objeto|destino|organismo`, renamed, not rehashed). This
+  actor's domain has no source-issued id at all - the site itself has none
+  (see "Architecture" above) - so the pre-existing content hash already _is_
+  this actor's closest equivalent to a natural id; this pass just gives it
+  the standardized name rather than inventing a second one. One useful,
+  slightly lucky property carried over unchanged: the hash excludes
+  `estado`, so the same real-world procedure keeps the same `record_id`
+  across a status change (e.g. "En proceso de Evaluación" -> "Realizada")
+  instead of `onlyNew` treating a status update as a brand-new listing.
+- **`event_type`**: constant `"NEW_LISTING"` for every record - see
+  `src/constants.ts`. Considered and rejected a per-`estado` event type
+  (e.g. something like `"AWARDED"` for `Realizada`) because that would be
+  real state-transition/diff detection dressed up as a static label, and the
+  retrofit brief explicitly scopes full field-level diffing out of this
+  pass. This domain has exactly one record species (a tender listing row),
+  unlike HSE's two-species split (convictions vs. notices), so a single
+  constant is the honest fit here.
+
+### `source_url`
+
+No per-tender detail page or link exists anywhere in the source (re-confirmed
+this pass, already known from the 2026-09-04 recon: zero `<a href>` inside
+`#tabla-resultados`). `source_url` is set to the shared search-listing URL
+(`src/constants.ts`'s `TARGET_URL`) on every record - the closest honest
+answer, but explicitly NOT a unique per-record deep link; every row from a
+given run shares this exact string. Disclosed in the dataset schema, README
+and the field's own doc comment in `src/types.ts`.
+
+### State sizing - deviated from the "a few thousand" default
+
+`src/state.ts`'s `MAX_SEEN_IDS` is 10,000, not "a few thousand". The literal
+spec value assumes a genuinely paginated, newest-first source where each run
+only ever sees a bounded recent window, so evicting old ids from the cap is
+safe (they'll never be re-fetched anyway). This actor is the opposite shape:
+every run re-fetches the ENTIRE ~5505-row backlog, so a cap below that size
+would evict real, still-active ids and make them spuriously reappear as
+`is_new: true` forever - the exact bug delta mode exists to prevent. 10,000
+stays comfortably above the current backlog with headroom for years of
+organic growth (`test/state.test.ts` asserts the cap exceeds 5505).
+
+Relatedly, since this source gives no real recency signal, `mergeSeenIds`
+treats "reconfirmed present in this run's full fetch" as a stand-in for
+"newest" when deciding what to keep at the front of the persisted array -
+documented in its doc comment in `src/state.ts`.
+
+### What actually gets marked "seen" - a real correctness trap avoided
+
+The first draft of `src/main.ts` persisted every `record_id` `fetchTenders`
+returned, regardless of `maxItems` or the charge-limit cutoff. That's wrong:
+if a run fetches 5505 tenders but only pushes 1000 (`maxItems` default) or
+stops early on `Actor.charge`'s `eventChargeLimitReached`, marking all 5505
+as "seen" would make the un-pushed ~4500 permanently invisible to `onlyNew`
+in every future run, even though the consumer never actually received them.
+Fixed: only `record_id`s that were actually pushed this run go into the
+seen-set (`pushedIds` in `src/main.ts`), so a record held back by `maxItems`
+or a charge limit stays eligible - and correctly flagged `is_new` - next run.
+
+### Gotcha: `npm run format` was already broken before this pass
+
+Unrelated to this retrofit's own code: `prettier --write .` fails on every
+file under `test/fixtures/*.html` with `SyntaxError: Void elements do not
+have end tags "hr"` - the real site's own markup has a self-closed `<hr>`
+immediately followed by a stray `</hr>` (verified: present in the byte-level
+fixtures captured 2026-09-04, not a capture artifact). This is pre-existing
+(confirmed via `git status`/`git diff` - these fixture files were untouched
+by this pass) and simply wasn't caught before, since the "Verification
+performed" section below only ever listed build/lint/test, never format.
+Fixed by adding `test/fixtures/*.html` to `.prettierignore`: these are
+byte-verified golden captures of a real (malformed) external response, not
+source code prettier should be rewriting, and letting prettier "fix" them
+would risk changing the exact bytes the parser tests assert against.
+
 ## Local dev environment note (not an actor defect)
 
 `apify run` on this Windows machine intermittently crashes _after_ the
@@ -196,11 +335,21 @@ regardless of whether the shell-level crash occurred afterward.
 
 - `npm run build` (tsc) - clean.
 - `npm run lint` (eslint) - clean.
-- `npm test` - 24/24 green, including 4 live tests hitting the real target
-  (not skipped, not mocked).
+- `npm run format` / `format:check` (prettier) - clean (see the
+  `.prettierignore` gotcha above under "Delta Engine retrofit").
+- `npm test` - 38/38 green, including the original 4 live tests hitting the
+  real target (not skipped, not mocked) plus the new `test/state.test.ts`
+  and `test/delta.test.ts` added by the Delta Engine retrofit.
 - `apify run --purge` - multiple real local runs, including the default
   unfiltered input (5505 rows parsed live, matching the count in this
   document) and a filtered `organismo=8` run that surfaced a real
   normalized "En proceso de Evaluación" row. Every pushed item's JSON was
   read back with `fs.readFileSync(path, 'utf-8')` + `JSON.parse` in Node
   (never a Windows Python pipe) and round-trips Spanish accents correctly.
+- (2026-09-06, Delta Engine retrofit) A fresh live POST against the real
+  target reconfirmed, independent of the fixtures: still 5505 rows, the
+  same oldest-first-leaning year progression across the response, the same
+  5-column `<thead>` with no date field, and zero real "Próxima Apertura"
+  rows (the only "Apertura" string in the response is still the `<select>`
+  dropdown's option text, not a database value) - none of this retrofit's
+  architectural conclusions rest on the 2026-09-04 findings going stale.

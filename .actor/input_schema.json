@@ -73,6 +73,26 @@
             "description": "Hard cap on the number of tenders returned this run. The full unfiltered backlog is over 5000 rows (verified live) - narrow with the filters above or raise this cap to pull all of it.",
             "default": 1000,
             "minimum": 1
+        },
+        "onlyNew": {
+            "title": "Only new records (delta mode)",
+            "type": "boolean",
+            "description": "For recurring/scheduled runs: return only tenders whose record_id was not already returned by a prior run of this actor (tracked in a named key-value store scoped to this actor, so it survives between scheduled runs). This source is fetched as a single unfiltered POST covering the entire backlog rather than genuine, reliably newest-first pagination (verified live - see AGENTS.md), so enabling this does NOT reduce fetch time or request volume: the full backlog is still fetched every run either way, and this only changes which records get pushed to the dataset afterward.",
+            "default": false
+        },
+        "dateRange": {
+            "title": "Date range filter (not applicable to this source)",
+            "type": "string",
+            "description": "Filters to a source's own natural per-record date field, where one of this portfolio's monitor actors has one. This source (Entre Rios' tender listing) publishes NO per-record date field anywhere - not on the listing, not on any detail page (there isn't one) - verified live against the real page (see AGENTS.md). Setting this has NO effect on the results returned; the actor logs a warning instead of silently applying a misleading filter. Present only for input-shape consistency with the rest of the portfolio.",
+            "editor": "select",
+            "enum": ["", "24h", "7d", "30d"],
+            "enumTitles": [
+                "No filter (default - this source has no date field to filter on)",
+                "Last 24 hours (no effect - see description)",
+                "Last 7 days (no effect - see description)",
+                "Last 30 days (no effect - see description)"
+            ],
+            "default": ""
         }
     }
 }

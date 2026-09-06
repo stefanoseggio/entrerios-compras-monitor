@@ -5,10 +5,10 @@
     "fields": {
         "type": "object",
         "properties": {
-            "id": {
-                "title": "ID",
+            "record_id": {
+                "title": "Record ID",
                 "type": "string",
-                "description": "Stable hash of procedimiento+objeto+destino+organismo - the site has no native row id."
+                "description": "Stable hash of procedimiento+objeto+destino+organismo - the site has no native row id. Deliberately excludes estado, so the same procedure keeps this id across status changes."
             },
             "procedimiento": { "title": "Procedimiento", "type": "string" },
             "anioProcedimiento": { "title": "Anio", "type": ["string", "null"] },
@@ -16,14 +16,38 @@
             "destino": { "title": "Destino", "type": "string" },
             "organismo": { "title": "Organismo", "type": "string" },
             "estado": { "title": "Estado", "type": "string" },
-            "scrapedAt": { "title": "Scraped at", "type": "string" }
+            "event_type": {
+                "title": "Event type",
+                "type": "string",
+                "description": "Always NEW_LISTING for this actor - see AGENTS.md."
+            },
+            "scraped_at": { "title": "Scraped at", "type": "string" },
+            "is_new": {
+                "title": "Is new",
+                "type": "boolean",
+                "description": "True if record_id was not in the persisted seen-set when this run started."
+            },
+            "source_url": {
+                "title": "Source URL",
+                "type": "string",
+                "description": "The shared search-listing page - this source has no per-tender detail link."
+            }
         }
     },
     "views": {
         "overview": {
             "title": "Overview",
             "transformation": {
-                "fields": ["procedimiento", "anioProcedimiento", "objeto", "destino", "organismo", "estado"]
+                "fields": [
+                    "procedimiento",
+                    "anioProcedimiento",
+                    "objeto",
+                    "destino",
+                    "organismo",
+                    "estado",
+                    "is_new",
+                    "scraped_at"
+                ]
             },
             "display": {
                 "component": "table",
@@ -33,7 +57,9 @@
                     { "label": "Objeto", "format": "text", "field": "objeto" },
                     { "label": "Destino", "format": "text", "field": "destino" },
                     { "label": "Organismo", "format": "text", "field": "organismo" },
-                    { "label": "Estado", "format": "text", "field": "estado" }
+                    { "label": "Estado", "format": "text", "field": "estado" },
+                    { "label": "Is new", "format": "boolean", "field": "is_new" },
+                    { "label": "Scraped at", "format": "date", "field": "scraped_at" }
                 ]
             }
         }

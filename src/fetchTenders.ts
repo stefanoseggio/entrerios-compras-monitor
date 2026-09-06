@@ -1,11 +1,10 @@
 import { log } from 'apify';
 
+import { TARGET_URL } from './constants.js';
 import { decodeWin1252 } from './decode.js';
 import { fetchWithRetry } from './http.js';
 import { parseTenders } from './parsers/table.js';
 import type { ActorInput, TenderRecord } from './types.js';
-
-const TARGET_URL = 'https://www.entrerios.gov.ar/contrataciones/licitaciones.php';
 
 /**
  * The search form is a standard `method="post" action=""` HTML form (plain

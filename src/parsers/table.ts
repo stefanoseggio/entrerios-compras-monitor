@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import * as cheerio from 'cheerio';
 
+import { EVENT_TYPE_NEW_LISTING, TARGET_URL } from '../constants.js';
 import type { EstadoCode, TenderRecord } from '../types.js';
 
 /**
@@ -120,14 +121,16 @@ export function parseTenders(html: string, appliedEstadoFilter: EstadoCode): Ten
         }
 
         records.push({
-            id: stableId(procedimiento, objeto, destino, organismo),
+            record_id: stableId(procedimiento, objeto, destino, organismo),
             procedimiento,
             anioProcedimiento: extractAnioProcedimiento(procedimiento),
             objeto,
             destino,
             organismo,
             estado: normalizeEstadoText(estadoRaw),
-            scrapedAt,
+            event_type: EVENT_TYPE_NEW_LISTING,
+            scraped_at: scrapedAt,
+            source_url: TARGET_URL,
         });
     }
 

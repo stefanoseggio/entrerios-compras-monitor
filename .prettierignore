@@ -1,3 +1,9 @@
 .prettierignore
 dist
 node_modules
+# Real, byte-verified captures of the live site's own (malformed) HTML - see
+# AGENTS.md. Prettier's HTML parser rejects the site's own invalid markup
+# (e.g. a self-closed `<hr>` followed by a stray `</hr>`, verified present in
+# the live response, not a capture artifact) and reformatting these would
+# risk changing the exact bytes the parser tests assert against.
+test/fixtures/*.html
