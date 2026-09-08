@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import type { DeltaState } from '../src/state.js';
+
 const fixturesDir = fileURLToPath(new URL('./fixtures', import.meta.url));
 
 function loadFixtureBuffer(name: string): ArrayBuffer {
@@ -20,25 +22,90 @@ vi.mock('../src/http.js', () => ({
 }));
 
 const { applyDateRangeFilter } = await import('../src/dateRangeFilter.js');
-const { attachIsNew, filterOnlyNew } = await import('../src/delta.js');
+const { attachEnvelope, filterEventTypes, filterOnlyNew, findClosed } = await import('../src/delta.js');
 const { fetchTenders } = await import('../src/fetchTenders.js');
 
-describe('attachIsNew - cold run (test 5a from the retrofit spec)', () => {
-    it('marks every record is_new=true when the seen-set is empty', async () => {
+const EMPTY_STATE: DeltaState = { entries: {}, lastRunAt: '' };
+
+describe('attachEnvelope - cold run', () => {
+    it('marks every record NEW_LISTING/is_new=true when the state is empty', async () => {
         fetchWithRetryMock.mockReset();
         fetchWithRetryMock.mockResolvedValueOnce(loadFixtureBuffer('licitaciones_organismo8.html'));
 
         const records = await fetchTenders({});
         expect(records).toHaveLength(54); // same real fixture table.test.ts uses
 
-        const items = attachIsNew(records, new Set());
+        const items = attachEnvelope(records, EMPTY_STATE);
         expect(items).toHaveLength(54);
-        expect(items.every((item) => item.is_new)).toBe(true);
+        expect(items.every((item) => item.is_new && item.event_type === 'NEW_LISTING')).toBe(true);
     });
 });
 
-describe('onlyNew - safe post-filter, not early-stop pagination (test 5b from the retrofit spec)', () => {
-    it('fetches the ENTIRE backlog even when every id is already seen, then filters to zero afterward', async () => {
+describe('attachEnvelope - STATUS_CHANGE / UNCHANGED', () => {
+    it('classifies a known record_id with a different estado as STATUS_CHANGE, with previousEstado set', async () => {
+        fetchWithRetryMock.mockReset();
+        fetchWithRetryMock.mockResolvedValueOnce(loadFixtureBuffer('licitaciones_organismo8.html'));
+        const records = await fetchTenders({});
+        const target = records[0];
+        const state: DeltaState = { entries: { [target.record_id]: { estado: 'a stale estado' } }, lastRunAt: '' };
+
+        const items = attachEnvelope([target], state);
+        expect(items[0].event_type).toBe('STATUS_CHANGE');
+        expect(items[0].previousEstado).toBe('a stale estado');
+        expect(items[0].is_new).toBe(false);
+    });
+
+    it('classifies a known record_id with the same estado as UNCHANGED - delivered only when onlyNew is off', async () => {
+        fetchWithRetryMock.mockReset();
+        fetchWithRetryMock.mockResolvedValueOnce(loadFixtureBuffer('licitaciones_organismo8.html'));
+        const records = await fetchTenders({});
+        const target = records[0];
+        const state: DeltaState = { entries: { [target.record_id]: { estado: target.estado } }, lastRunAt: '' };
+
+        const items = attachEnvelope([target], state);
+        expect(items[0].event_type).toBe('UNCHANGED');
+        expect(filterOnlyNew(items)).toHaveLength(0);
+    });
+});
+
+describe('findClosed', () => {
+    it('reports a previously-seen record_id absent from this run\'s fetch as CLOSED', () => {
+        const state: DeltaState = {
+            entries: { stillHere: { estado: 'Realizada' }, goneNow: { estado: 'Fracasada' } },
+            lastRunAt: '',
+        };
+        const closed = findClosed(state, new Set(['stillHere']), '2026-09-08T00:00:00.000Z');
+        expect(closed).toHaveLength(1);
+        expect(closed[0].record_id).toBe('goneNow');
+        expect(closed[0].event_type).toBe('CLOSED');
+        expect(closed[0].estado).toBe('Fracasada'); // last-known estado, carried through
+    });
+
+    it('reports nothing closed when every previously-seen id is still present', () => {
+        const state: DeltaState = { entries: { a: { estado: 'Realizada' } }, lastRunAt: '' };
+        expect(findClosed(state, new Set(['a']), '2026-09-08T00:00:00.000Z')).toHaveLength(0);
+    });
+});
+
+describe('filterEventTypes', () => {
+    it('restricts to the requested subset, always keeping UNCHANGED items available for onlyNew to decide on', () => {
+        const items = [
+            { event_type: 'NEW_LISTING' } as never,
+            { event_type: 'STATUS_CHANGE' } as never,
+            { event_type: 'UNCHANGED' } as never,
+        ];
+        const filtered = filterEventTypes(items, ['STATUS_CHANGE']);
+        expect(filtered.map((i) => i.event_type)).toEqual(['STATUS_CHANGE', 'UNCHANGED']);
+    });
+
+    it('returns everything unchanged when eventTypes is not set', () => {
+        const items = [{ event_type: 'NEW_LISTING' } as never];
+        expect(filterEventTypes(items, undefined)).toEqual(items);
+    });
+});
+
+describe('onlyNew - safe post-filter, not early-stop pagination', () => {
+    it('fetches the ENTIRE backlog even when every id is already seen+unchanged, then filters to zero afterward', async () => {
         fetchWithRetryMock.mockReset();
         fetchWithRetryMock.mockResolvedValueOnce(loadFixtureBuffer('licitaciones_organismo8.html'));
 
@@ -49,33 +116,33 @@ describe('onlyNew - safe post-filter, not early-stop pagination (test 5b from th
         // is expected with or without onlyNew.
         expect(fetchWithRetryMock).toHaveBeenCalledTimes(1);
 
-        const fullySeenIds = new Set(records.map((r) => r.record_id));
-        const items = attachIsNew(records, fullySeenIds);
-        expect(items.every((item) => !item.is_new)).toBe(true);
+        const entries = Object.fromEntries(records.map((r) => [r.record_id, { estado: r.estado }]));
+        const items = attachEnvelope(records, { entries, lastRunAt: '' });
+        expect(items.every((item) => item.event_type === 'UNCHANGED')).toBe(true);
 
         const filtered = filterOnlyNew(items);
         expect(filtered).toHaveLength(0);
         // Still exactly one fetch call: the full set was fetched first and
-        // filtered afterward, not cut short by the seen-set.
+        // filtered afterward, not cut short by the state.
         expect(fetchWithRetryMock).toHaveBeenCalledTimes(1);
     });
 
-    it('a partially-seen state returns only the genuinely-unseen records (not zero, not everything)', async () => {
+    it('a partially-seen state returns only the genuinely-new records (not zero, not everything)', async () => {
         fetchWithRetryMock.mockReset();
         fetchWithRetryMock.mockResolvedValueOnce(loadFixtureBuffer('licitaciones_organismo8.html'));
 
         const records = await fetchTenders({});
-        const partiallySeenIds = new Set(records.slice(0, 40).map((r) => r.record_id));
+        const entries = Object.fromEntries(records.slice(0, 40).map((r) => [r.record_id, { estado: r.estado }]));
 
-        const items = attachIsNew(records, partiallySeenIds);
+        const items = attachEnvelope(records, { entries, lastRunAt: '' });
         const filtered = filterOnlyNew(items);
 
         expect(filtered).toHaveLength(14);
-        expect(filtered.every((item) => item.is_new)).toBe(true);
+        expect(filtered.every((item) => item.is_new && item.event_type === 'NEW_LISTING')).toBe(true);
     });
 });
 
-describe('applyDateRangeFilter - documented no-op for this source (test 5c, adapted honestly - see AGENTS.md)', () => {
+describe('applyDateRangeFilter - documented no-op for this source (adapted honestly - see AGENTS.md)', () => {
     it('returns records unchanged when dateRange is not set', () => {
         const records = [{ a: 1 }, { a: 2 }];
         expect(applyDateRangeFilter(records, undefined)).toEqual(records);

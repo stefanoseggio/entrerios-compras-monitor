@@ -8,4 +8,5 @@
  * the official site. It is NOT a unique per-record URL; every row from a
  * given run shares this exact string.
  */
-export const TARGET_URL = 'https://www.entrerios.gov.ar/contrataciones/licitaciones.php';
+export declare const TARGET_URL = "https://www.entrerios.gov.ar/contrataciones/licitaciones.php";
+//# sourceMappingURL=constants.d.ts.map

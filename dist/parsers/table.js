@@ -1,10 +1,6 @@
 import { createHash } from 'node:crypto';
-
 import * as cheerio from 'cheerio';
-
 import { TARGET_URL } from '../constants.js';
-import type { EstadoCode, ParsedTenderRow } from '../types.js';
-
 /**
  * The site's search form (see AGENTS.md) renders the results table in two
  * different shapes depending on whether an `estado` filter was applied,
@@ -17,19 +13,17 @@ import type { EstadoCode, ParsedTenderRow } from '../types.js';
  *   the one filtered status).
  */
 const FIVE_COLUMN_LAYOUT = 5;
-
 /**
  * Canonical status labels for the site's 4-value `estado` enum, keyed by the
  * same codes the POST form uses (see AGENTS.md). Used when the ESTADO column
  * isn't present in the response (a specific `estado` filter was applied).
  */
-const ESTADO_LABELS_BY_CODE: Record<Exclude<EstadoCode, ''>, string> = {
+const ESTADO_LABELS_BY_CODE = {
     '1': 'Próxima Apertura',
     '2': 'En proceso de Evaluación',
     '3': 'Realizada',
     '4': 'Fracasada',
 };
-
 /**
  * Normalizes a raw ESTADO cell scraped from the table. The site's database
  * has a real, permanent encoding corruption for one of its 4 status labels:
@@ -53,18 +47,21 @@ const ESTADO_LABELS_BY_CODE: Record<Exclude<EstadoCode, ''>, string> = {
  * or corrupted accented "o" for that one label defensively, but this is
  * disclosed as unverified in AGENTS.md.
  */
-export function normalizeEstadoText(raw: string): string {
+export function normalizeEstadoText(raw) {
     const text = raw.replace(/\s+/g, ' ').trim();
-    if (/^Realizada$/i.test(text)) return 'Realizada';
-    if (/^Fracasada$/i.test(text)) return 'Fracasada';
+    if (/^Realizada$/i.test(text))
+        return 'Realizada';
+    if (/^Fracasada$/i.test(text))
+        return 'Fracasada';
     // The `.{1,3}` in the middle tolerates both a clean single accented "o"
     // and the 3-character garbage the site's own corrupted bytes decode to
     // under Windows-1252 (see the doc comment above).
-    if (/^En proceso de Evaluaci.{1,3}n$/i.test(text)) return 'En proceso de Evaluación';
-    if (/^Pr.{1,3}xima[s]? Apertura[s]?$/i.test(text)) return 'Próxima Apertura';
+    if (/^En proceso de Evaluaci.{1,3}n$/i.test(text))
+        return 'En proceso de Evaluación';
+    if (/^Pr.{1,3}xima[s]? Apertura[s]?$/i.test(text))
+        return 'Próxima Apertura';
     return text;
 }
-
 /**
  * Extracts the trailing year from a `procedimiento` string, e.g.
  * "Solicitud De Cotizacion 54/2025" -> "2025". Verified live 2026-09-04
@@ -74,15 +71,13 @@ export function normalizeEstadoText(raw: string): string {
  * an actual "0" option), not a parsing failure - we pass through whatever
  * digits are actually there rather than validating them as a real year.
  */
-export function extractAnioProcedimiento(procedimiento: string): string | null {
+export function extractAnioProcedimiento(procedimiento) {
     const match = procedimiento.match(/\/(\d{1,4})\s*$/);
     return match ? match[1] : null;
 }
-
-function stableId(procedimiento: string, objeto: string, destino: string, organismo: string): string {
+function stableId(procedimiento, objeto, destino, organismo) {
     return createHash('sha1').update(`${procedimiento}|${objeto}|${destino}|${organismo}`).digest('hex');
 }
-
 /**
  * Parses the `#tabla-resultados` results table out of an already-decoded
  * HTML string (see decode.ts - never pass raw bytes here).
@@ -92,34 +87,30 @@ function stableId(procedimiento: string, objeto: string, destino: string, organi
  *   with. Used to fill in the `estado` field when the response is in the
  *   4-column shape (no ESTADO column present).
  */
-export function parseTenders(html: string, appliedEstadoFilter: EstadoCode): ParsedTenderRow[] {
+export function parseTenders(html, appliedEstadoFilter) {
     const $ = cheerio.load(html);
     const rows = $('#tabla-resultados tbody tr').toArray();
-
     const scrapedAt = new Date().toISOString();
-    const records: ParsedTenderRow[] = [];
-
+    const records = [];
     for (const row of rows) {
         const cellTexts = $(row)
             .find('td')
             .toArray()
             .map((td) => $(td).text().replace(/\s+/g, ' ').trim());
-
-        if (cellTexts.length < 4) continue; // defensive: skip any malformed row rather than crash the run
-
-        let procedimiento: string;
-        let objeto: string;
-        let destino: string;
-        let organismo: string;
-        let estadoRaw: string;
-
+        if (cellTexts.length < 4)
+            continue; // defensive: skip any malformed row rather than crash the run
+        let procedimiento;
+        let objeto;
+        let destino;
+        let organismo;
+        let estadoRaw;
         if (cellTexts.length >= FIVE_COLUMN_LAYOUT) {
             [procedimiento, objeto, destino, estadoRaw, organismo] = cellTexts;
-        } else {
+        }
+        else {
             [procedimiento, objeto, destino, organismo] = cellTexts;
             estadoRaw = appliedEstadoFilter ? ESTADO_LABELS_BY_CODE[appliedEstadoFilter] : '';
         }
-
         records.push({
             record_id: stableId(procedimiento, objeto, destino, organismo),
             procedimiento,
@@ -132,6 +123,6 @@ export function parseTenders(html: string, appliedEstadoFilter: EstadoCode): Par
             source_url: TARGET_URL,
         });
     }
-
     return records;
 }
+//# sourceMappingURL=table.js.map

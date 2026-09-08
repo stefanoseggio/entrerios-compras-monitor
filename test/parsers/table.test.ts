@@ -33,7 +33,6 @@ describe('parseTenders - 5-column layout (estado filter blank, real capture)', (
         expect(first.estado).toBe('Realizada');
         expect(first.record_id).toMatch(/^[0-9a-f]{40}$/);
         expect(first.scraped_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-        expect(first.event_type).toBe('NEW_LISTING');
         expect(first.source_url).toBe('https://www.entrerios.gov.ar/contrataciones/licitaciones.php');
     });
 

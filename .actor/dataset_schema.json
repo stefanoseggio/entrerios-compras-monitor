@@ -19,7 +19,12 @@
             "event_type": {
                 "title": "Event type",
                 "type": "string",
-                "description": "Always NEW_LISTING for this actor - see AGENTS.md."
+                "description": "NEW_LISTING (never seen before), STATUS_CHANGE (estado changed since last seen), UNCHANGED (only when Only new records is off) or CLOSED (no longer in the register)."
+            },
+            "previousEstado": {
+                "title": "Previous Estado",
+                "type": ["string", "null"],
+                "description": "Set only when event_type=STATUS_CHANGE: the estado this record_id was last seen under."
             },
             "scraped_at": { "title": "Scraped at", "type": "string" },
             "is_new": {
@@ -60,6 +65,24 @@
                     { "label": "Estado", "format": "text", "field": "estado" },
                     { "label": "Is new", "format": "boolean", "field": "is_new" },
                     { "label": "Scraped at", "format": "date", "field": "scraped_at" }
+                ]
+            }
+        },
+        "changes": {
+            "title": "Status changes & closures",
+            "transformation": {
+                "fields": ["record_id", "event_type", "previousEstado", "estado", "organismo", "objeto", "scraped_at"]
+            },
+            "display": {
+                "component": "table",
+                "columns": [
+                    { "label": "ID", "format": "text", "field": "record_id" },
+                    { "label": "Evento", "format": "text", "field": "event_type" },
+                    { "label": "Estado anterior", "format": "text", "field": "previousEstado" },
+                    { "label": "Estado actual", "format": "text", "field": "estado" },
+                    { "label": "Organismo", "format": "text", "field": "organismo" },
+                    { "label": "Objeto", "format": "text", "field": "objeto" },
+                    { "label": "Detectado", "format": "date", "field": "scraped_at" }
                 ]
             }
         }

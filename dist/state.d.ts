@@ -1,5 +1,3 @@
-import { Actor } from 'apify';
-
 /**
  * Fixed, unique-to-this-actor key-value store name. Deliberately NOT the
  * run's default key-value store (`Actor.setValue`/`Actor.getValue` without a
@@ -8,9 +6,7 @@ import { Actor } from 'apify';
  * opened via `Actor.openKeyValueStore` persists across runs and across the
  * run's own retention.
  */
-export const DELTA_STATE_STORE_NAME = 'entrerios-compras-monitor-delta-state';
-const DELTA_STATE_KEY = 'STATE';
-
+export declare const DELTA_STATE_STORE_NAME = "entrerios-compras-monitor-delta-state";
 /**
  * Cap on how many ids we persist. The literal Delta Engine spec says "a few
  * thousand", sized for a genuinely paginated, newest-first source where each
@@ -25,44 +21,19 @@ const DELTA_STATE_KEY = 'STATE';
  * of organic growth - a deliberate, disclosed deviation from the literal
  * spec value, driven by this actor's own architecture.
  */
-export const MAX_SEEN_IDS = 10_000;
-
+export declare const MAX_SEEN_IDS = 10000;
 /** v2: the estado a record_id was last seen under, not just a bare seen flag - this is what
  *  makes STATUS_CHANGE possible. record_id's own hash deliberately excludes estado (see
  *  types.ts), so this is the ONLY thing that can meaningfully change for a given id. */
 export interface SeenEntry {
     estado: string;
 }
-
 export interface DeltaState {
     entries: Record<string, SeenEntry>;
     lastRunAt: string;
 }
-
-function emptyState(): DeltaState {
-    return { entries: {}, lastRunAt: '' };
-}
-
-function isValidState(value: unknown): value is DeltaState {
-    if (!value || typeof value !== 'object') return false;
-    const v = value as Partial<DeltaState>;
-    return typeof v.entries === 'object' && v.entries !== null;
-}
-
-export async function loadDeltaState(): Promise<DeltaState> {
-    const store = await Actor.openKeyValueStore(DELTA_STATE_STORE_NAME);
-    const state = await store.getValue<unknown>(DELTA_STATE_KEY);
-    // A v1-shaped state ({ seenIds: string[] }) fails isValidState and is treated as absent -
-    // the first v2 run on an existing schedule re-baselines rather than crashing on the old
-    // shape. Disclosed in CHANGELOG.md.
-    return isValidState(state) ? state : emptyState();
-}
-
-export async function saveDeltaState(state: DeltaState): Promise<void> {
-    const store = await Actor.openKeyValueStore(DELTA_STATE_STORE_NAME);
-    await store.setValue(DELTA_STATE_KEY, state);
-}
-
+export declare function loadDeltaState(): Promise<DeltaState>;
+export declare function saveDeltaState(state: DeltaState): Promise<void>;
 /**
  * Merges this run's fetched (id, estado) pairs into the previously persisted entries, then
  * caps the result at `MAX_SEEN_IDS`. Pure function - no store access - so it is directly
@@ -81,21 +52,8 @@ export async function saveDeltaState(state: DeltaState): Promise<void> {
  * the live backlog for a very long stretch (long enough for `MAX_SEEN_IDS` other ids to be
  * reconfirmed ahead of them) are ever evicted.
  */
-export function mergeSeenEntries(
-    previousEntries: Record<string, SeenEntry>,
-    currentRun: readonly { id: string; estado: string }[],
-): Record<string, SeenEntry> {
-    const currentIds = new Set(currentRun.map((r) => r.id));
-    const order = [...currentRun.map((r) => r.id), ...Object.keys(previousEntries).filter((id) => !currentIds.has(id))];
-    const cappedIds = [...new Set(order)].slice(0, MAX_SEEN_IDS);
-
-    const merged: Record<string, SeenEntry> = { ...previousEntries };
-    for (const r of currentRun) merged[r.id] = { estado: r.estado };
-
-    const result: Record<string, SeenEntry> = {};
-    for (const id of cappedIds) {
-        const entry = merged[id];
-        if (entry) result[id] = entry;
-    }
-    return result;
-}
+export declare function mergeSeenEntries(previousEntries: Record<string, SeenEntry>, currentRun: readonly {
+    id: string;
+    estado: string;
+}[]): Record<string, SeenEntry>;
+//# sourceMappingURL=state.d.ts.map

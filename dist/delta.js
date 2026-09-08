@@ -1,13 +1,11 @@
 import { TARGET_URL } from './constants.js';
-import type { DeltaState, SeenEntry } from './state.js';
-import type { DatasetItem, EventType, ParsedTenderRow, TenderRecord } from './types.js';
-
-function classify(previous: SeenEntry | undefined, row: ParsedTenderRow): { eventType: EventType; previousEstado: string | null } {
-    if (!previous) return { eventType: 'NEW_LISTING', previousEstado: null };
-    if (previous.estado !== row.estado) return { eventType: 'STATUS_CHANGE', previousEstado: previous.estado };
+function classify(previous, row) {
+    if (!previous)
+        return { eventType: 'NEW_LISTING', previousEstado: null };
+    if (previous.estado !== row.estado)
+        return { eventType: 'STATUS_CHANGE', previousEstado: previous.estado };
     return { eventType: 'UNCHANGED', previousEstado: null };
 }
-
 /**
  * Attaches the state-derived envelope (`event_type`, `previousEstado`, `is_new`) to every
  * parsed row by checking `record_id` against the persisted state. Pure - takes `state` as a
@@ -19,14 +17,13 @@ function classify(previous: SeenEntry | undefined, row: ParsedTenderRow): { even
  * procedimiento/objeto/destino/organismo produces a genuinely different record_id by
  * construction, indistinguishable from a new listing without a real source-issued id.
  */
-export function attachEnvelope(rows: readonly ParsedTenderRow[], state: DeltaState): DatasetItem[] {
+export function attachEnvelope(rows, state) {
     return rows.map((row) => {
         const previous = state.entries[row.record_id];
         const { eventType, previousEstado } = classify(previous, row);
         return { ...row, event_type: eventType, previousEstado, is_new: !previous };
     });
 }
-
 /**
  * A previously-seen record_id absent from THIS run's fetch has left the live backlog. Unlike
  * sibling actors on paginated sources, this is always trustworthy here: a single POST always
@@ -34,10 +31,11 @@ export function attachEnvelope(rows: readonly ParsedTenderRow[], state: DeltaSta
  * never be an artifact of a maxItems-truncated walk - there is no such truncation at the fetch
  * level (maxItems only bounds what gets PUSHED, in main.ts, after this point).
  */
-export function findClosed(state: DeltaState, fetchedIds: ReadonlySet<string>, scrapedAt: string): TenderRecord[] {
-    const closed: TenderRecord[] = [];
+export function findClosed(state, fetchedIds, scrapedAt) {
+    const closed = [];
     for (const [recordId, entry] of Object.entries(state.entries)) {
-        if (fetchedIds.has(recordId)) continue;
+        if (fetchedIds.has(recordId))
+            continue;
         closed.push({
             record_id: recordId,
             procedimiento: '',
@@ -54,7 +52,6 @@ export function findClosed(state: DeltaState, fetchedIds: ReadonlySet<string>, s
     }
     return closed;
 }
-
 /**
  * Delta-mode post-filter: keeps only records that are new, status-changed, or (always) closed.
  *
@@ -65,12 +62,13 @@ export function findClosed(state: DeltaState, fetchedIds: ReadonlySet<string>, s
  * actively wrong even if this source were paginated). The full backlog is always fetched
  * first, exactly as without `onlyNew`; this function only decides what gets pushed afterward.
  */
-export function filterOnlyNew(items: readonly DatasetItem[]): DatasetItem[] {
+export function filterOnlyNew(items) {
     return items.filter((item) => item.event_type !== 'UNCHANGED');
 }
-
-export function filterEventTypes(items: readonly DatasetItem[], eventTypes: readonly EventType[] | undefined): DatasetItem[] {
-    if (!eventTypes) return items.slice();
+export function filterEventTypes(items, eventTypes) {
+    if (!eventTypes)
+        return items.slice();
     const allowed = new Set(eventTypes);
     return items.filter((item) => item.event_type === 'UNCHANGED' || allowed.has(item.event_type));
 }
+//# sourceMappingURL=delta.js.map

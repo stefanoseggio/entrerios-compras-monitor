@@ -77,8 +77,20 @@
         "onlyNew": {
             "title": "Only new records (delta mode)",
             "type": "boolean",
-            "description": "For recurring/scheduled runs: return only tenders whose record_id was not already returned by a prior run of this actor (tracked in a named key-value store scoped to this actor, so it survives between scheduled runs). This source is fetched as a single unfiltered POST covering the entire backlog rather than genuine, reliably newest-first pagination (verified live - see AGENTS.md), so enabling this does NOT reduce fetch time or request volume: the full backlog is still fetched every run either way, and this only changes which records get pushed to the dataset afterward.",
+            "description": "For recurring/scheduled runs: return only tenders that are new, changed estado, or closed since a prior run of this actor (tracked in a named key-value store scoped to this actor, so it survives between scheduled runs). This source is fetched as a single unfiltered POST covering the entire backlog rather than genuine, reliably newest-first pagination (verified live - see AGENTS.md), so enabling this does NOT reduce fetch time or request volume: the full backlog is still fetched every run either way, and this only changes which records get pushed to the dataset afterward.",
             "default": false
+        },
+        "eventTypes": {
+            "title": "Event types to deliver",
+            "type": "array",
+            "description": "Which kinds of change to deliver when 'Only new records' is on (ignored, everything delivered, when it is off). NEW_LISTING = never seen before. STATUS_CHANGE = seen before, estado changed - free to detect, record_id's own hash excludes estado on purpose. CLOSED = a previously-seen record_id is absent from this run's fetch - always trustworthy here, since one POST always returns the entire backlog.",
+            "editor": "select",
+            "items": {
+                "type": "string",
+                "enum": ["NEW_LISTING", "STATUS_CHANGE", "CLOSED"],
+                "enumTitles": ["NEW_LISTING - never seen before", "STATUS_CHANGE - estado changed", "CLOSED - no longer in the register"]
+            },
+            "default": ["NEW_LISTING", "STATUS_CHANGE", "CLOSED"]
         },
         "dateRange": {
             "title": "Date range filter (not applicable to this source)",

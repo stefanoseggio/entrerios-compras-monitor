@@ -2,13 +2,11 @@
 export type EstadoCode = '' | '1' | '2' | '3' | '4';
 export type TipoLicitacionCode = '' | '1' | '2' | '3' | '4';
 export type OrganismoCode = '' | '1' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
-
 /** `""` (default) disables the filter - see AGENTS.md: this source publishes
  * no per-record date field at all, so this filter is a documented no-op for
  * this particular actor (kept for input-shape consistency with the rest of
  * the portfolio's monitor actors). */
 export type DateRangeCode = '' | '24h' | '7d' | '30d';
-
 /**
  * NEW_LISTING: record_id never seen before. STATUS_CHANGE: record_id seen before, `estado`
  * differs from last time - a real, free-to-detect lifecycle transition, since record_id's own
@@ -23,7 +21,6 @@ export type DateRangeCode = '' | '24h' | '7d' | '30d';
  * without a real source-issued id to correlate old and new rows - see AGENTS.md "Delta engine v2".
  */
 export type EventType = 'NEW_LISTING' | 'STATUS_CHANGE' | 'UNCHANGED' | 'CLOSED';
-
 export interface ActorInput {
     estado?: EstadoCode;
     tipoLicitacion?: TipoLicitacionCode;
@@ -46,7 +43,6 @@ export interface ActorInput {
      * a warning is logged instead of silently applying a misleading filter. */
     dateRange?: DateRangeCode;
 }
-
 /**
  * One row of the results table (`#tabla-resultados`), normalized - exactly what the pure
  * parser can produce without any cross-run state. `event_type`/`previousEstado`/`is_new` are
@@ -76,7 +72,6 @@ export interface ParsedTenderRow {
     /** The shared search-listing URL (see src/constants.ts) - this source has no per-tender detail link to give instead. */
     source_url: string;
 }
-
 /** `ParsedTenderRow` plus the state-derived envelope fields - see src/delta.ts's `classify`. */
 export interface TenderRecord extends ParsedTenderRow {
     /** NEW_LISTING / STATUS_CHANGE / UNCHANGED / CLOSED - see EventType doc comment and AGENTS.md "Delta engine v2". */
@@ -84,7 +79,6 @@ export interface TenderRecord extends ParsedTenderRow {
     /** Set only for event_type=STATUS_CHANGE: the estado this record_id was last seen under. */
     previousEstado: string | null;
 }
-
 /**
  * `TenderRecord` plus the one field that requires persisted cross-run state
  * and therefore cannot come out of the pure parser: `is_new`. This is the
@@ -94,3 +88,4 @@ export interface DatasetItem extends TenderRecord {
     /** True if `record_id` was NOT in the persisted seen-set when this run started. Computed and set correctly even when `onlyNew` is false/unset. */
     is_new: boolean;
 }
+//# sourceMappingURL=types.d.ts.map

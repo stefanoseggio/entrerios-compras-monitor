@@ -176,6 +176,54 @@ silently misparse a meaningful fraction of real rows. Instead:
     - zero `<a href>` inside `#tabla-resultados`) - the 5 listing fields are
       the entirety of what this endpoint publishes.
 
+## Delta engine v2 (2026-09-08)
+
+Supersedes "record_id and event_type choices" below (record_id reasoning
+still accurate; event_type's "constant, not a per-record classification"
+conclusion is superseded - that section explicitly scoped a per-status
+event type as "out of scope for this pass", and this pass is exactly the
+one that closes it).
+
+**What changed:**
+
+- `src/types.ts` split the old `TenderRecord` (which the pure parser
+  stamped `event_type` onto directly) into `ParsedTenderRow` (exactly what
+  `parseTenders` can produce with no state) and `TenderRecord` (that plus
+  the state-derived `event_type`/`previousEstado`, attached in
+  `src/delta.ts`'s new `attachEnvelope`, mirroring `attachIsNew`'s existing
+  separation of concerns).
+- `src/state.ts`: `DeltaState.entries` is now `Record<record_id, {estado}>`,
+  not a bare `seenIds: string[]`. Only `estado` needs tracking - record_id's
+  own hash already excludes it and covers everything else that could
+  change, so there is nothing else to fingerprint (see below).
+- `event_type` is now NEW_LISTING / STATUS_CHANGE (estado differs from
+  last time - free, since estado is already in the fetched row) / UNCHANGED
+  (full-mode only) / **CLOSED** (new - a previously-seen record_id absent
+  from THIS run's fetch). CLOSED is always trustworthy here, unlike
+  sibling actors on paginated sources (santafe/salta/mendoza): a single
+  POST always returns the ENTIRE backlog, so there is no maxItems-
+  truncation risk at the fetch level to gate CLOSED detection on - `main.ts`
+  computes it from the complete fetched-id set, independent of whatever
+  `maxItems` later bounds for pushing.
+- **Deliberately no UPDATED event.** This is the one place in the fleet
+  where that's structurally impossible to add honestly: `record_id` IS a
+  hash of procedimiento+objeto+destino+organismo. If any of those 4 fields
+  change, the hash changes too, producing a DIFFERENT record_id -
+  indistinguishable from a brand-new listing without a real source-issued
+  id to say "this new hash used to be that old hash". Unlike Mendoza
+  (which fingerprints content SEPARATELY from its real record_id) or
+  Tucuman (ditto), Entre Rios has no independent identity key at all - the
+  site itself has none (see "Architecture" above). So `estado` is the only
+  field this actor can ever say "the SAME record changed" about.
+- No `resolveSourceUrl`-style cost lever and no two-tier pricing: every
+  record already has identical, complete content at identical cost (one
+  shared POST, no per-row anything) - same reasoning as Tucuman. Single
+  `result` event, unchanged from v1's pricing shape.
+- New `eventTypes` input narrows delta-mode delivery, matching the fleet
+  convention on santafe/tucuman/salta/mendoza.
+- State shape is NOT backward compatible with v1 (`{seenIds: string[]}` is
+  treated as absent, not migrated) - see CHANGELOG.md.
+
 ## Delta Engine retrofit (2026-09-06)
 
 Added `onlyNew` (delta mode) and `dateRange`, and standardized the output

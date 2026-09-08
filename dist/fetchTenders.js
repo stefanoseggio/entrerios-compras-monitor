@@ -1,11 +1,8 @@
 import { log } from 'apify';
-
 import { TARGET_URL } from './constants.js';
 import { decodeWin1252 } from './decode.js';
 import { fetchWithRetry } from './http.js';
 import { parseTenders } from './parsers/table.js';
-import type { ActorInput, ParsedTenderRow } from './types.js';
-
 /**
  * The search form is a standard `method="post" action=""` HTML form (plain
  * PHP + PHPSESSID cookie, no ViewState/DevExpress markers - verified live
@@ -15,7 +12,7 @@ import type { ActorInput, ParsedTenderRow } from './types.js';
  * empty state (9.4KB) regardless of what's in the querystring. The form
  * fields MUST be POSTed, not appended as `?estado=...`. See AGENTS.md.
  */
-export async function fetchTenders(input: ActorInput): Promise<ParsedTenderRow[]> {
+export async function fetchTenders(input) {
     const estado = input.estado ?? '';
     const body = new URLSearchParams({
         tipo_licitacion: input.tipoLicitacion ?? '',
@@ -25,16 +22,15 @@ export async function fetchTenders(input: ActorInput): Promise<ParsedTenderRow[]
         cmb_organismo: input.organismo ?? '',
         buscar: 'Buscar',
     });
-
     log.info(`POST ${TARGET_URL} (${body.toString()})`);
     const buffer = await fetchWithRetry(TARGET_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: body.toString(),
     });
-
     const html = decodeWin1252(buffer);
     const records = parseTenders(html, estado);
     log.info(`Parseadas ${records.length} licitaciones para el filtro aplicado.`);
     return records;
 }
+//# sourceMappingURL=fetchTenders.js.map

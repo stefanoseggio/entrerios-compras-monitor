@@ -9,3 +9,4 @@
  * given run shares this exact string.
  */
 export const TARGET_URL = 'https://www.entrerios.gov.ar/contrataciones/licitaciones.php';
+//# sourceMappingURL=constants.js.map
