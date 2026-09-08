@@ -22,7 +22,7 @@ vi.mock('../src/http.js', () => ({
 }));
 
 const { applyDateRangeFilter } = await import('../src/dateRangeFilter.js');
-const { attachEnvelope, filterEventTypes, filterOnlyNew, findClosed } = await import('../src/delta.js');
+const { attachEnvelope, filterEventTypes, filterOnlyNew, findClosed, isUnfilteredInput } = await import('../src/delta.js');
 const { fetchTenders } = await import('../src/fetchTenders.js');
 
 const EMPTY_STATE: DeltaState = { entries: {}, lastRunAt: '' };
@@ -84,6 +84,21 @@ describe('findClosed', () => {
     it('reports nothing closed when every previously-seen id is still present', () => {
         const state: DeltaState = { entries: { a: { estado: 'Realizada' } }, lastRunAt: '' };
         expect(findClosed(state, new Set(['a']), '2026-09-08T00:00:00.000Z')).toHaveLength(0);
+    });
+});
+
+describe('isUnfilteredInput - gates whether CLOSED detection is safe (real bug found in cloud verification)', () => {
+    it('is true when no filter fields are set', () => {
+        expect(isUnfilteredInput({})).toBe(true);
+        expect(isUnfilteredInput({ maxItems: 500, onlyNew: true })).toBe(true); // non-filter fields don't count
+    });
+
+    it('is false when any single filter field is set', () => {
+        expect(isUnfilteredInput({ estado: '3' })).toBe(false);
+        expect(isUnfilteredInput({ tipoLicitacion: '2' })).toBe(false);
+        expect(isUnfilteredInput({ organismo: '8' })).toBe(false);
+        expect(isUnfilteredInput({ anio: '2025' })).toBe(false);
+        expect(isUnfilteredInput({ palabra: 'salud' })).toBe(false);
     });
 });
 

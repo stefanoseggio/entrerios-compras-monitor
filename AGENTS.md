@@ -215,6 +215,19 @@ one that closes it).
   Tucuman (ditto), Entre Rios has no independent identity key at all - the
   site itself has none (see "Architecture" above). So `estado` is the only
   field this actor can ever say "the SAME record changed" about.
+- **CLOSED is gated on `isUnfilteredInput()` - a real false-positive bug
+  caught during cloud verification, not designed away upfront.** The
+  design initially computed CLOSED against ANY run's fetch, reasoning
+  "one POST always returns the entire backlog". True only when no filter
+  is applied - a filtered run's fetch is a SUBSET of the register, so a
+  previously-seen id absent from it may simply be outside this run's
+  filter, not actually gone. Verified live: after an unfiltered cold run,
+  a follow-up run with `estado=3` wrongly reported 37 records from the
+  other 3 estados as CLOSED. Fixed by skipping CLOSED entirely (logged,
+  not silent) whenever any of estado/tipoLicitacion/organismo/anio/palabra
+  is set - `src/delta.ts`'s `isUnfilteredInput()`. Only an unfiltered run
+  (the already-established "leave estado blank for the full union" case
+  from the 2026-09-04 recon) can trust CLOSED.
 - No `resolveSourceUrl`-style cost lever and no two-tier pricing: every
   record already has identical, complete content at identical cost (one
   shared POST, no per-row anything) - same reasoning as Tucuman. Single

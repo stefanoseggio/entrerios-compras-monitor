@@ -1,5 +1,14 @@
 import type { DeltaState } from './state.js';
-import type { DatasetItem, EventType, ParsedTenderRow, TenderRecord } from './types.js';
+import type { ActorInput, DatasetItem, EventType, ParsedTenderRow, TenderRecord } from './types.js';
+/**
+ * True only when none of the search-form filters are set. CLOSED detection (see findClosed
+ * below) is safe to compute ONLY against a fetch this returns true for - a filtered run's
+ * fetch is a SUBSET of the register, not the whole thing, so a previously-seen id absent from
+ * it may simply be outside this run's filter, not actually gone. Confirmed live during
+ * verification: a run narrowed to estado=3 after an unfiltered run wrongly reported 37 records
+ * from other estados as CLOSED before this check existed - see AGENTS.md "Delta engine v2".
+ */
+export declare function isUnfilteredInput(input: ActorInput): boolean;
 /**
  * Attaches the state-derived envelope (`event_type`, `previousEstado`, `is_new`) to every
  * parsed row by checking `record_id` against the persisted state. Pure - takes `state` as a

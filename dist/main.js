@@ -1,6 +1,6 @@
 import { Actor, log } from 'apify';
 import { applyDateRangeFilter } from './dateRangeFilter.js';
-import { attachEnvelope, filterEventTypes, filterOnlyNew, findClosed } from './delta.js';
+import { attachEnvelope, filterEventTypes, filterOnlyNew, findClosed, isUnfilteredInput } from './delta.js';
 import { fetchTenders } from './fetchTenders.js';
 import { loadDeltaState, mergeSeenEntries, saveDeltaState } from './state.js';
 const RESULT_EVENT_NAME = 'result';
@@ -18,11 +18,22 @@ async function run() {
     log.info(`Total licitaciones obtenidas: ${rows.length}`);
     let items = attachEnvelope(rows, previousState);
     items = applyDateRangeFilter(items, dateRange);
-    // Trustworthy here (unlike a paginated source): this fetch always covers the ENTIRE
-    // backlog, so a previously-seen id absent from it has genuinely left the register.
-    const fetchedIds = new Set(rows.map((r) => r.record_id));
-    const closed = findClosed(previousState, fetchedIds, scrapedAt).map((record) => ({ ...record, is_new: false }));
-    items = [...items, ...closed];
+    // CLOSED is only safe to compute against an UNFILTERED run (see AGENTS.md "Delta engine
+    // v2" - this was found and fixed during cloud verification, not assumed safe from the
+    // design alone): this fetch is the entire backlog only when estado/tipoLicitacion/
+    // organismo/anio/palabra are all blank. Any filter applied means the fetch is a SUBSET of
+    // the register, so a previously-seen id absent from it may simply be outside this run's
+    // filter, not actually gone - reporting it CLOSED in that case would be a false positive
+    // (confirmed live: a follow-up run narrowed to estado=3 wrongly reported 37 records from
+    // other estados as CLOSED). Skip CLOSED entirely on a filtered run rather than risk that.
+    if (isUnfilteredInput(input)) {
+        const fetchedIds = new Set(rows.map((r) => r.record_id));
+        const closed = findClosed(previousState, fetchedIds, scrapedAt).map((record) => ({ ...record, is_new: false }));
+        items = [...items, ...closed];
+    }
+    else if (Object.keys(previousState.entries).length > 0) {
+        log.info('Skipping CLOSED detection this run: a filter is applied, so this fetch is not the full register. Run with no filters to enable it.');
+    }
     if (onlyNew) {
         const beforeCount = items.length;
         items = filterOnlyNew(items);

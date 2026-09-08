@@ -83,7 +83,7 @@
         "eventTypes": {
             "title": "Event types to deliver",
             "type": "array",
-            "description": "Which kinds of change to deliver when 'Only new records' is on (ignored, everything delivered, when it is off). NEW_LISTING = never seen before. STATUS_CHANGE = seen before, estado changed - free to detect, record_id's own hash excludes estado on purpose. CLOSED = a previously-seen record_id is absent from this run's fetch - always trustworthy here, since one POST always returns the entire backlog.",
+            "description": "Which kinds of change to deliver when 'Only new records' is on (ignored, everything delivered, when it is off). NEW_LISTING = never seen before. STATUS_CHANGE = seen before, estado changed - free to detect, record_id's own hash excludes estado on purpose. CLOSED = a previously-seen record_id is absent from this run's fetch - only computed on an UNFILTERED run (no status/type/organism/year/keyword filter set), since a filtered run's fetch is a subset of the register, not the whole thing; skipped otherwise.",
             "editor": "select",
             "items": {
                 "type": "string",

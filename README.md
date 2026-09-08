@@ -5,7 +5,7 @@
 [![Entre Rios Tenders Scraper & Monitor](https://apify.com/actor-badge?actor=stefano_seggio/entrerios-compras-monitor)](https://apify.com/stefano_seggio/entrerios-compras-monitor)
 
 - **Status changes, free.** `estado` (e.g. "En proceso de Evaluación" -> "Realizada") is already in every fetched row - a status change is detected at zero extra cost.
-- **Knows when a tender leaves the register, always reliably.** Unlike sources with pagination, this one is a single request that always returns the entire backlog - so "a previously-tracked tender is now absent" is never a guess caused by a partial walk. It's reported as `CLOSED`.
+- **Knows when a tender leaves the register.** Run with no filters (the default union of everything) and a previously-tracked tender that's now absent is reported as `CLOSED` - not a guess, since an unfiltered run always covers the entire backlog in one request.
 - **No proxy, no browser, one request** - a plain PHP form POST, decoded correctly from the source's real (mislabeled) Windows-1252 bytes.
 
 ## Who uses Entre Rios procurement data
@@ -20,6 +20,8 @@
 ## Delta mode
 
 Set `onlyNew: true` for recurring/scheduled monitoring and each run returns only tenders that are `NEW_LISTING`, `STATUS_CHANGE` (estado changed) or `CLOSED` (no longer in the register). `eventTypes` narrows which of the three you want. Every record also always carries `is_new` (computed even on a plain non-delta run).
+
+**`CLOSED` only fires on an unfiltered run.** Any of `estado`/`tipoLicitacion`/`organismo`/`anio`/`palabra` being set means this run's fetch is a subset of the register, not the whole thing - a previously-seen tender absent from a filtered fetch might just be outside this run's filter, not actually gone. Confirmed live during verification: a filtered follow-up run wrongly flagged 37 unrelated records as CLOSED before this gate was added. Run with every filter blank (the default "full backlog" case) to get real CLOSED signals; a filtered run silently skips CLOSED detection (logged, not hidden) and only reports NEW_LISTING/STATUS_CHANGE.
 
 **Note on `onlyNew`'s cost**: this source is fetched as a single unfiltered POST covering the entire ~5505-row backlog - there is no genuine pagination to short-circuit. `onlyNew` still fetches the whole backlog every run and filters the output afterward, so it reduces what you receive, not how long the run takes.
 

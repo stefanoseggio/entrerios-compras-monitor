@@ -7,7 +7,7 @@ The v2 delta engine: real status-change and closure detection, replacing the v1 
 ### Added
 
 - **`STATUS_CHANGE` events**: a tender whose `estado` changed since it was last seen (e.g. "En proceso de Evaluación" -> "Realizada") is now reported as `STATUS_CHANGE` with `previousEstado` set - free to detect, `estado` is already in the fetched row.
-- **`CLOSED` events**: a tender no longer present in the register is now detected and reported, instead of silently disappearing. Always trustworthy here (unlike sibling actors on paginated sources): a single POST always returns the entire backlog, so there is no partial-walk risk.
+- **`CLOSED` events**: a tender no longer present in the register is now detected and reported, instead of silently disappearing. Only computed on an UNFILTERED run (no estado/tipoLicitacion/organismo/anio/palabra set) - a filtered run's fetch is a subset of the register, not the whole thing, so CLOSED is skipped (and logged) otherwise. This gate was added after cloud verification caught a real false-positive: a filtered follow-up run wrongly reported 37 records outside its filter as CLOSED before the fix.
 - **`eventTypes` input**: narrows delta-mode delivery to a subset of `NEW_LISTING`/`STATUS_CHANGE`/`CLOSED`.
 - `previousEstado` output field; a second dataset view ("Status changes & closures").
 - Apache-2.0 `LICENSE`, this `CHANGELOG.md`, an `npx eslint .` step in CI.
