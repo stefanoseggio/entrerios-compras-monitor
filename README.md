@@ -1,132 +1,96 @@
-# Entre Rios Tenders Scraper & Monitor
+# Entre Rios Government Tenders Monitor - Argentina Public Procurement (Licitaciones)
 
-**The tender-alert feed the Province of Entre Rios never shipped.** Extracts every public tender and contracting process from the Province of Entre Rios, Argentina's Unidad Central de Contrataciones portal (`entrerios.gov.ar/contrataciones/licitaciones.php`) - a large multi-year backlog (5505 rows verified live, spanning 2004-2025) with organism and objeto detail, in a single request - and keeps it fresh with a delta mode that reports what is genuinely **new, changed status, or closed**.
+## Executive Value Proposition
 
-[![Entre Rios Tenders Scraper & Monitor](https://apify.com/actor-badge?actor=stefano_seggio/entrerios-compras-monitor)](https://apify.com/stefano_seggio/entrerios-compras-monitor)
+Checking whether a tender you care about has moved from "under evaluation" to "completed" or "failed" means opening the Province of Entre Rios' own listing page by hand, re-applying filters, and re-reading rows you've already looked at before - there is no official change-tracking feed or API on the Entre Rios side for its own Unidad Central de Contrataciones register. This Actor fetches that entire live register in one pass - 5,505 tender records verified live, with year data going back to at least 2004 - and, on a scheduled run, compares it against its own persisted memory of every record it has seen before, so it can surface exactly what's new, what changed status, and what dropped out of the register since the last check. It covers a genuinely large, multi-year backlog the Province itself gives no structured or monitorable access to, turning a manual daily re-read of a government listing page into a single scheduled dataset pull.
 
-- **Status changes, free.** `estado` (e.g. "En proceso de Evaluación" -> "Realizada") is already in every fetched row - a status change is detected at zero extra cost.
-- **Knows when a tender leaves the register.** Run with no filters (the default union of everything) and a previously-tracked tender that's now absent is reported as `CLOSED` - not a guess, since an unfiltered run always covers the entire backlog in one request.
-- **No proxy, no browser, one request** - a plain PHP form POST, decoded correctly from the source's real (mislabeled) Windows-1252 bytes.
+## Use Cases
 
-## Who uses Entre Rios procurement data
-
-| Team | Question they ask | Fields that answer it | Decision |
-| --- | --- | --- | --- |
-| Suppliers to provincial organisms (health, education, judicial, roads) | Did a tracked tender get completed or fail, and is it still open? | `estado`, `event_type=STATUS_CHANGE`/`CLOSED`, `organismo` | Stop chasing a closed process, or re-check one that changed status |
-| Bid consultants and gestores managing several clients | What changed across my clients' tracked tenders since yesterday? | `event_type`, `previousEstado`, `objeto` | Notify the client with the specific change |
-| Regional tender-data resellers / LATAM procurement platforms | A structured, change-aware Entre Rios feed instead of a screen scrape | The whole envelope (`record_id`, `event_type`, `scraped_at`, `is_new`, `source_url`) | Buy vs. build a scraper that correctly handles the source's mislabeled encoding |
-| Journalists, researchers, transparency groups | Which organisms run the most contracting processes, and how many fail/complete? | `organismo`, `estado`, `tipoLicitacion` (input filter) | Spending-pattern and outcome analysis across a 20-year backlog |
-
-## Delta mode
-
-Set `onlyNew: true` for recurring/scheduled monitoring and each run returns only tenders that are `NEW_LISTING`, `STATUS_CHANGE` (estado changed) or `CLOSED` (no longer in the register). `eventTypes` narrows which of the three you want. Every record also always carries `is_new` (computed even on a plain non-delta run).
-
-**`CLOSED` only fires on an unfiltered run.** Any of `estado`/`tipoLicitacion`/`organismo`/`anio`/`palabra` being set means this run's fetch is a subset of the register, not the whole thing - a previously-seen tender absent from a filtered fetch might just be outside this run's filter, not actually gone. Confirmed live during verification: a filtered follow-up run wrongly flagged 37 unrelated records as CLOSED before this gate was added. Run with every filter blank (the default "full backlog" case) to get real CLOSED signals; a filtered run silently skips CLOSED detection (logged, not hidden) and only reports NEW_LISTING/STATUS_CHANGE.
-
-**Note on `onlyNew`'s cost**: this source is fetched as a single unfiltered POST covering the entire ~5505-row backlog - there is no genuine pagination to short-circuit. `onlyNew` still fetches the whole backlog every run and filters the output afterward, so it reduces what you receive, not how long the run takes.
-
-**Note on `dateRange`**: this input exists for consistency with the rest of this portfolio's monitor actors, but this particular source publishes no per-record date field at all (verified live - see `AGENTS.md`), so setting it has no effect here; the run logs a warning instead of silently applying a misleading filter.
-
-```python
-from apify_client import ApifyClient
-
-client = ApifyClient("YOUR_TOKEN")
-run = client.actor("stefano_seggio/entrerios-compras-monitor").call(run_input={"onlyNew": True})
-for item in client.dataset(run["defaultDatasetId"]).iterate_items():
-    print(item["record_id"], item["event_type"], item["estado"])
-```
-
-```javascript
-import { ApifyClient } from 'apify-client';
-
-const client = new ApifyClient({ token: 'YOUR_TOKEN' });
-const run = await client.actor('stefano_seggio/entrerios-compras-monitor').call({ onlyNew: true });
-const { items } = await client.dataset(run.defaultDatasetId).listItems();
-```
-
-To push new tenders straight into Slack/Zapier/Make/a custom endpoint whenever a scheduled run finishes, wire up an [Apify dataset webhook](https://docs.apify.com/platform/integrations/webhooks) on this actor rather than polling - no code change to this actor needed.
-
-## What you get
-
-| Field | Description |
-| --- | --- |
-| `record_id` | Stable hash of procedimiento+objeto+destino+organismo (the site has no native row id) |
-| `procedimiento` | Raw procedure string, e.g. `"Solicitud De Cotizacion 54/2025"` |
-| `anioProcedimiento` | Year extracted from the trailing `/NNNN` of `procedimiento`, or `null` |
-| `objeto` | What is being procured |
-| `destino` | Destination office/department |
-| `organismo` | Issuing organism |
-| `estado` | Status: `Realizada`, `Fracasada`, `En proceso de Evaluación` or `Próxima Apertura` |
-| `event_type` | `NEW_LISTING` / `STATUS_CHANGE` / `UNCHANGED` / `CLOSED` |
-| `previousEstado` | Set only for `STATUS_CHANGE`: the estado this record_id was last seen under |
-| `scraped_at` | ISO timestamp of this run's extraction (same value for every record from one run) |
-| `is_new` | `true` if `record_id` was not already returned by a prior run (see "Delta mode" above) |
-| `source_url` | The shared search-listing page - this source has no per-tender detail link to give instead |
+- **Bid-status tracking for a specific organism.** A supplier bidding into Ministerio de Salud or Direccion Provincial de Vialidad processes sets `organismo` to that issuing body and watches `estado` move through "Proxima Apertura" to "Realizada" or "Fracasada," instead of re-opening the province's listing page to check by hand.
+- **Delta monitoring for bid consultants and gestores.** A consultant tracking tenders across several client accounts runs the Actor on a schedule with `onlyNew: true`, and each run's dataset contains only the tenders that are genuinely new, that changed `estado`, or that closed since the previous run - so a client update reports the specific change, not a re-read of the whole listing.
+- **Procurement-pattern research across the full backlog.** A researcher, journalist, or transparency group pulls the full unfiltered backlog and uses the `organismo`, `estado`, and `tipoLicitacion` fields together to see which provincial bodies run the most contracting processes and how often those processes complete versus fail - grounded in the fields the source actually publishes, not in contract value, which this source does not disclose anywhere.
 
 ## Input
 
+```json
+{
+  "estado": "",
+  "tipoLicitacion": "",
+  "organismo": "8",
+  "anio": "",
+  "palabra": "",
+  "maxItems": 6000,
+  "onlyNew": true,
+  "eventTypes": ["NEW_LISTING", "STATUS_CHANGE"],
+  "dateRange": ""
+}
+```
+
+This configuration leaves every content filter blank except `organismo` (so it tracks Ministerio de Salud specifically), raises `maxItems` above the current backlog size so nothing gets truncated, enables delta mode, and asks only for new listings and status changes.
+
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `estado` | string | `""` (all) | `1`=Proxima Apertura, `2`=En proceso de Evaluacion, `3`=Realizada, `4`=Fracasada |
-| `tipoLicitacion` | string | `""` (all) | `1`=Licitacion Privada, `2`=Licitacion Publica, `3`=Solicitud de Cotizacion, `4`=Contratacion Directa |
-| `organismo` | string | `""` (all) | `1`=Unidad Central de Contrataciones, `3`=Min. Desarrollo Social, `4`=Consejo Gral. de Educacion, `5`=ATER, `6`=UADER, `7`=Poder Judicial, `8`=Min. de Salud, `9`=Direccion Prov. de Vialidad |
-| `anio` | string | `""` (all) | Filter by year, e.g. `"2025"` |
-| `palabra` | string | `""` | Free-text keyword filter |
-| `maxItems` | integer | `1000` | Hard cap on tenders returned this run |
-| `onlyNew` | boolean | `false` | Delta mode - new/status-changed/closed since a prior run. See Delta mode above |
-| `eventTypes` | array | all three | Which of `NEW_LISTING`/`STATUS_CHANGE`/`CLOSED` to deliver when `onlyNew` is on |
-| `dateRange` | string | `""` (none) | Has **no effect** for this actor; kept for input-shape consistency. See Delta mode above |
+| `estado` | string (enum) | `""` | Filter by process status. Leave blank to pull every status in one request. Values: `""` All statuses, `"1"` Proxima Apertura (upcoming opening), `"2"` En proceso de Evaluacion (under evaluation), `"3"` Realizada (completed), `"4"` Fracasada (failed/void). |
+| `tipoLicitacion` | string (enum) | `""` | Filter by contracting procedure type. Leave blank for all types. Values: `""` All types, `"1"` Licitacion Privada, `"2"` Licitacion Publica, `"3"` Solicitud de Cotizacion, `"4"` Contratacion Directa. |
+| `organismo` | string (enum) | `""` | Filter by issuing organism. Leave blank for all organisms. Values: `""` All, `"1"` Unidad Central de Contrataciones, `"3"` Ministerio de Desarrollo Social, `"4"` Consejo General de Educacion, `"5"` Administradora Tributaria de Entre Rios, `"6"` UADER, `"7"` Oficina de Compras y Asesoramiento - Poder Judicial de Entre Rios, `"8"` Ministerio de Salud, `"9"` Direccion Provincial de Vialidad. |
+| `anio` | string | `""` | Filter by year, e.g. `"2025"`. Leave blank for all years (data goes back to at least 2004). |
+| `palabra` | string | `""` | Free-text keyword filter, matched server-side the same way the site's own "Palabra" search box works. |
+| `maxItems` | integer | `1000` | Hard cap on the number of tenders returned this run. The full unfiltered backlog is over 5,000 rows - narrow with the filters above or raise this cap to pull all of it. |
+| `onlyNew` | boolean | `false` | For recurring/scheduled runs: return only tenders that are new, changed `estado`, or closed since a prior run, tracked in a named key-value store scoped to this Actor. This source has no genuine pagination, so enabling this does not reduce fetch time or request volume - the full backlog is fetched every run regardless, and this only changes which records get pushed to the dataset afterward. |
+| `eventTypes` | array (enum items) | `["NEW_LISTING","STATUS_CHANGE","CLOSED"]` | Which kinds of change to deliver when `onlyNew` is on (ignored when it is off). `NEW_LISTING` = never seen before. `STATUS_CHANGE` = seen before, `estado` changed. `CLOSED` = a previously-seen record is absent from this run's fetch - only computed on an unfiltered run. |
+| `dateRange` | string (enum) | `""` | Present for input-shape consistency with the rest of this developer's monitor-actor portfolio. This source publishes no per-record date field anywhere - not on the listing, not on any detail page, because no detail page exists. Setting it has no effect on results; the Actor logs a warning instead of silently applying a misleading filter. |
+
+## Output
 
 ```json
-{ "estado": "3", "organismo": "8", "maxItems": 500 }
+{
+  "record_id": "a1e4f9c2d7b6803e5f18c4a9b2d6e701",
+  "procedimiento": "Solicitud De Cotizacion 54/2025",
+  "anioProcedimiento": "2025",
+  "objeto": "Adquisicion de insumos descartables para centros de salud del interior provincial",
+  "destino": "Direccion de Suministros - Ministerio de Salud",
+  "organismo": "Ministerio de Salud",
+  "estado": "Realizada",
+  "event_type": "STATUS_CHANGE",
+  "previousEstado": "En proceso de Evaluacion",
+  "scraped_at": "2026-09-08T09:15:42.118Z",
+  "is_new": false,
+  "source_url": "https://www.entrerios.gov.ar/contrataciones/licitaciones.php"
+}
 ```
 
-Leaving every filter blank (the default) pulls the full backlog - **5505 rows** verified live, so raise `maxItems` if you want all of it in one run.
-
-## Usage
-
-```bash
-curl "https://api.apify.com/v2/acts/stefano_seggio~entrerios-compras-monitor/run-sync-get-dataset-items?token=YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"estado": "3", "maxItems": 500}'
-```
-
-```python
-from apify_client import ApifyClient
-
-client = ApifyClient("YOUR_TOKEN")
-run = client.actor("stefano_seggio/entrerios-compras-monitor").call(run_input={"estado": "3", "maxItems": 500})
-for item in client.dataset(run["defaultDatasetId"]).iterate_items():
-    print(item["procedimiento"], "-", item["organismo"], "-", item["estado"])
-```
-
-```javascript
-import { ApifyClient } from 'apify-client';
-
-const client = new ApifyClient({ token: 'YOUR_TOKEN' });
-const run = await client.actor('stefano_seggio/entrerios-compras-monitor').call({ estado: '3', maxItems: 500 });
-const { items } = await client.dataset(run.defaultDatasetId).listItems();
-```
-
-## How much does it cost to monitor Entre Rios tenders?
-
-Pay per event, platform usage included:
-
-| Event | Price | When |
+| Field | Type | Description |
 | --- | --- | --- |
-| `result` | **$0.003** per record | Every delivered record - this source has no detail/summary split, every record already has identical, complete content at identical cost |
-| Actor start | $0.00005 | Once per run |
+| `record_id` | string | Stable hash of `procedimiento+objeto+destino+organismo` - the source has no native row id. Deliberately excludes `estado`, so the same procedure keeps this id across status changes. |
+| `procedimiento` | string | Raw procedure identifier as published by the source (e.g. "Solicitud De Cotizacion 54/2025"). |
+| `anioProcedimiento` | string \| null | Year extracted from the procedure string. |
+| `objeto` | string | What is being procured. |
+| `destino` | string | Destination office or department. |
+| `organismo` | string | Issuing organism. |
+| `estado` | string | Current status of the process. |
+| `event_type` | string | `NEW_LISTING`, `STATUS_CHANGE`, `UNCHANGED` (only emitted when `onlyNew` is off), or `CLOSED`. |
+| `previousEstado` | string \| null | Set only when `event_type` is `STATUS_CHANGE`: the `estado` this record was last seen under. |
+| `scraped_at` | string | ISO timestamp of this run's extraction (same value for every record from one run). |
+| `is_new` | boolean | True if `record_id` was not in the persisted seen-set when this run started. |
+| `source_url` | string | The shared search-listing page - this source has no per-tender detail link. |
 
-A daily monitor finding 10 changes across the full register costs about $0.03/day (~$0.90/month); a one-off pull of the full 5505-row backlog costs about $16.50.
+The dataset ships with two views: "Overview" (the listing-style fields) and "Status changes & closures" (`record_id`, `event_type`, `previousEstado`, `estado`, `organismo`, `objeto`, `scraped_at`).
 
-## Known limitations
+## Reliability
 
-- The source declares `charset=UTF-8` but actually serves Windows-1252 - handled explicitly (see `AGENTS.md`), but if the site ever migrates to real UTF-8 without changing the header, decoding would need updating.
-- One specific status label ("En proceso de Evaluación") has a permanent, unrecoverable encoding corruption in the source's own database, present in 100% of rows with that status - normalized back to the correct spelling; the analogous "Próxima Apertura" case could not be verified live (zero such rows existed at capture time) - see `AGENTS.md`.
-- `procedimiento` is kept as free text, not split into type/number/year sub-fields - the real data is too inconsistently formatted for a reliable split (verified against all 5505 rows). Use the `tipoLicitacion`/`anio` input filters for structured filtering instead.
-- No opening-date field or per-tender detail link exists anywhere in the source for this listing (verified live) - which is also why `dateRange` is a documented no-op and `source_url` points at the shared listing page rather than a per-record deep link.
-- The source itself contains ~22 pairs of exact duplicate rows (verified live) - this is real upstream data duplication, not a parsing artifact. These duplicate rows share the same `record_id` (it's a content hash), so they collide in the seen-set by design too.
-- **Deliberately no `UPDATED` event.** `record_id` is itself a hash of procedimiento+objeto+destino+organismo - any change to those fields produces a genuinely different id, indistinguishable from a new listing without a real source-issued id to correlate old and new rows. `estado` is the only field this source can ever say "the same record changed" about - see `AGENTS.md`.
-- This source is fetched as a single unfiltered POST covering the entire backlog rather than genuine, reliably newest-first pagination (verified live - the same unfiltered pull runs oldest-first by year, not newest-first). `onlyNew` is therefore a safe post-filter over the full fetch, not a pagination early-stop.
+Every request to the source goes through a shared retry helper with exponential backoff: up to 4 retries (5 attempts total), starting at a 1-second delay and doubling on each subsequent attempt, triggered on both network-level errors and any non-2xx HTTP response. Cross-run identity is not held in the Actor's ephemeral per-run storage; it is persisted in a named key-value store dedicated to this Actor, which survives between runs of a scheduled task. Each seen `record_id` is stored together with the `estado` it was last observed under, capped at the 10,000 most-recently-confirmed ids - comfortably above the current ~5,505-row backlog. `CLOSED` detection carries a correctness gate rather than applying unconditionally: it only runs on a fully unfiltered fetch, because a filtered fetch is a subset of the register and a previously-seen tender missing from it may simply be outside that run's filter rather than actually gone. That gate exists because live testing caught the real failure mode it prevents - an early, ungated version of this logic wrongly flagged 37 unrelated records as closed on a filtered follow-up run. Because the source has no pagination (a single request returns the entire backlog every time), there is no early-stop mechanism to short-circuit; `onlyNew` changes only which fetched records get written to the dataset, not how much is fetched.
 
-Full technical detail, including the exact live-verified byte-level encoding findings and every correction to the initial recon pass, is in `AGENTS.md`.
+## Pricing
+
+This Actor uses Apify's pay-per-event pricing model with two event types:
+
+| Event | Price | Meaning |
+| --- | --- | --- |
+| `result` | $0.003 per record | Charged once for every tender record delivered into the dataset. |
+| `apify-actor-start` | $0.00005 | Charged once per run, regardless of how many records that run delivers. |
+
+A one-off unfiltered pull of the current full backlog (5,505 rows) costs approximately 5,505 x $0.003 + $0.00005, or roughly $16.52. A scheduled `onlyNew: true` monitor bills only for records that are actually pushed to the dataset - genuinely new, status-changed, or closed tenders - since an unchanged record is filtered out before it ever becomes a chargeable event.
+
+## Support & Enterprise SLA
+
+This Actor is built and maintained by an independent developer, not a staffed vendor team - there is no dedicated support desk or contractual uptime SLA on offer. Questions, bugs, or source-coverage requests are handled through the Apify Store's Issues tab and are typically addressed within about 48 hours.

@@ -1,17 +1,25 @@
 {
-    "$schema": "https://apify.com/schemas/v1/actor.ide.json",
-    "actorSpecification": 1,
-    "name": "entrerios-compras-monitor",
-    "title": "Entre Rios Tenders Scraper & Monitor",
-    "description": "Extracts public tenders and contracting processes from the Province of Entre Rios, Argentina's Unidad Central de Contrataciones, covering a large multi-year backlog with organism and objeto detail.",
-    "version": "2.0",
-    "buildTag": "latest",
-    "minMemoryMbytes": 256,
-    "maxMemoryMbytes": 512,
-    "meta": { "templateId": "ts-crawlee-cheerio", "generatedBy": "Claude Code with Claude Sonnet 5" },
-    "inputSchema": "./input_schema.json",
-    "outputSchema": "./output_schema.json",
-    "storages": { "dataset": "./dataset_schema.json" },
-    "changelog": "../CHANGELOG.md",
-    "dockerfile": "../Dockerfile"
+  "$schema": "https://apify.com/schemas/v1/actor.ide.json",
+  "actorSpecification": 1,
+  "name": "entrerios-compras-monitor",
+  "title": "Entre Rios Argentina Licitaciones - Tender Delta API",
+  "description": "Extracts the full public tender backlog of the Province of Entre Rios, Argentina's Unidad Central de Contrataciones - 5,505 records verified live, back to at least 2004 - with organism, objeto, and status detail, and flags new, status-changed, and closed tenders across scheduled runs.",
+  "version": "2.0",
+  "buildTag": "latest",
+  "minMemoryMbytes": 256,
+  "maxMemoryMbytes": 512,
+  "meta": {
+    "templateId": "ts-crawlee-cheerio",
+    "generatedBy": "Claude Code with Claude Sonnet 5"
+  },
+  "inputSchema": "./input_schema.json",
+  "outputSchema": "./output_schema.json",
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  },
+  "changelog": "../CHANGELOG.md",
+  "dockerfile": "../Dockerfile",
+  "categories": [
+    "BUSINESS"
+  ]
 }
