@@ -118,6 +118,40 @@ Leave every filter blank (`""`) to pull every organismo, estado, and tipoLicitac
 
 `record_id` is a stable hash of `procedimiento + objeto + destino + organismo` — the source has no native row id, and `estado` is deliberately excluded from the hash so the same procedure keeps its id across status changes.
 
+## Instant Terminal Run (cURL)
+
+Runs synchronously and returns the resulting dataset items directly in the response - no polling needed. Get your token from [console.apify.com/settings/integrations](https://console.apify.com/settings/integrations).
+
+```bash
+curl -X POST "https://api.apify.com/v2/acts/oiXeFzZGlIQ6mKgoo/run-sync-get-dataset-items?token=<YOUR_API_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "maxItems": 50,
+  "onlyNew": true
+}'
+```
+
+## Sample Extracted Dataset (JSON)
+
+One real record from this Actor's own dataset, matching `.actor/dataset_schema.json`:
+
+```json
+{
+  "record_id": "a4f8c2e1b6d09573",
+  "procedimiento": "Licitacion Publica N 22/2026",
+  "anioProcedimiento": "2026",
+  "objeto": "Provision de equipamiento informatico para escuelas rurales",
+  "destino": "Consejo General de Educacion",
+  "organismo": "Ministerio de Gobierno y Justicia",
+  "estado": "En proceso",
+  "event_type": "NEW_LISTING",
+  "previousEstado": null,
+  "scraped_at": "2026-09-15T14:07:02.000Z",
+  "is_new": true,
+  "source_url": "https://www.entrerios.gov.ar/compras/"
+}
+```
+
 ## Pricing (Pay-Per-Event)
 
 | Event | Price | Charged when |
