@@ -2,12 +2,12 @@
 
 # Entre Rios Argentina Licitaciones - Tender Delta API
 
-**A scheduled delta monitor for the Province of Entre Rios' public tender register — new listings, status changes, and closures, without a manual re-read of a government listing page.**
+**A scheduled delta monitor for the Province of Entre Rios' public tender register — new listings, status changes, and closures, without a manual re-read of a government listing page, on a schedule you configure.**
 
 [![Built for Apify](https://img.shields.io/badge/Built%20for-Apify-1AA6E0?logo=apify&logoColor=white)](https://apify.com)
-[![Pay-Per-Event](https://img.shields.io/badge/pay--per--event-%240.003%20%2Frecord-2ea44f)](#pricing-pay-per-event)
+[![Pay-Per-Event](https://img.shields.io/badge/pay--per--event-%240.003%20%2Frecord-2ea44f)](#cost--byok-disclosure)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 
 [![Run on Apify](https://img.shields.io/badge/Run%20on-Apify-FF9012?style=for-the-badge&logo=apify&logoColor=white)](https://apify.com/stefano_seggio/entrerios-compras-monitor)
 
@@ -47,7 +47,7 @@ flowchart TD
     G --> L
     J --> L
     L --> M["Dataset push"]
-    M --> N["'result' event charged<br/>$0.003 per record delivered"]
+    M --> N["'result' event charged<br/>per record delivered"]
 ```
 
 ## Features
@@ -63,9 +63,25 @@ flowchart TD
 | Retry with backoff | Every request goes through a shared retry helper — up to 4 retries (5 attempts total), starting at a 1-second delay and doubling — on network errors and any non-2xx response. |
 | Two dataset views | "Overview" (listing-style fields) and "Status changes & closures" (`record_id`, `event_type`, `previousEstado`, `estado`, `organismo`, `objeto`, `scraped_at`). |
 
-## Quick start
+## Cost & BYOK Disclosure
 
-Run it from the Apify CLI with this actor's own documented example input — tracking Ministerio de Salud (`organismo: "8"`) in delta mode, delivering only new listings and status changes:
+**Pricing model:** pay per event — one metered event, no separate compute charge on top.
+
+| Event | What triggers it | Price |
+| --- | --- | --- |
+| `result` | Once for every tender record delivered into the dataset | Pay-per-result — see the [live Store pricing tab](https://apify.com/stefano_seggio/entrerios-compras-monitor) for the current exact rate |
+
+Specific per-event rates have appeared in this Actor's own Store listing and in earlier README revisions; the Store's **Pricing** tab is the single, always-current source of truth, so it's linked above rather than a number restated here that could drift out of date.
+
+**Delta suppression, never a refund.** `record_id` is a stable hash of `procedimiento + objeto + destino + organismo` (`estado` is deliberately excluded, so the same tender keeps its id across a status change). A tender whose `estado` hasn't changed since it was last seen is classified `UNCHANGED` and is filtered out by `filterOnlyNew` in delta mode — *before* the dataset push — so it is simply never billed, not refunded after the fact. (This source has no true `UPDATED` event; see Known limitations for why.)
+
+**BYOK:** This Actor requires no third-party API key. The Entre Rios tender register is a public provincial government listing with no login wall or provider key of any kind.
+
+## Quickstart
+
+Run it from the Apify CLI, the REST API, or the `apify-client` SDK in Python or Node.js — this example tracks Ministerio de Salud (`organismo: "8"`) in delta mode, delivering only new listings and status changes.
+
+### Apify CLI
 
 ```bash
 apify call entrerios-compras-monitor --input '{
@@ -81,9 +97,79 @@ apify call entrerios-compras-monitor --input '{
 }'
 ```
 
-Leave every filter blank (`""`) to pull every organismo, estado, and tipoLicitacion in one unfiltered run — the only mode that also unlocks `CLOSED` detection. Programmatic equivalents in Node.js and Python, using the official `apify-client` packages, are included in this repo (`run-monitor.js`, `run_monitor.py`).
+Leave every filter blank (`""`) to pull every organismo, estado, and tipoLicitacion in one unfiltered run — the only mode that also unlocks `CLOSED` detection.
 
-### Input reference
+### cURL (instant, synchronous)
+
+Runs synchronously and returns the resulting dataset items directly in the response - no polling needed. Get your token from [console.apify.com/settings/integrations](https://console.apify.com/settings/integrations).
+
+```bash
+curl -X POST "https://api.apify.com/v2/acts/oiXeFzZGlIQ6mKgoo/run-sync-get-dataset-items?token=<YOUR_API_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "maxItems": 50,
+  "onlyNew": true
+}'
+```
+
+### Python (`apify-client`)
+
+```python
+import os
+from apify_client import ApifyClient
+
+client = ApifyClient(os.environ["APIFY_TOKEN"])
+
+run_input = {
+    "estado": "",
+    "tipoLicitacion": "",
+    "organismo": "8",
+    "anio": "",
+    "palabra": "",
+    "maxItems": 6000,
+    "onlyNew": True,
+    "eventTypes": ["NEW_LISTING", "STATUS_CHANGE"],
+    "dateRange": "",
+}
+
+run = client.actor("stefano_seggio/entrerios-compras-monitor").call(run_input=run_input)
+
+for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+    print(f"- [{item['event_type']}] {item['procedimiento']} ({item['estado']})")
+```
+
+A full runnable version of this script is at `examples/run_monitor.py` in this repo.
+
+### Node.js (`apify-client`)
+
+```javascript
+import { ApifyClient } from 'apify-client';
+
+const client = new ApifyClient({ token: process.env.APIFY_TOKEN });
+
+const run = await client.actor('stefano_seggio/entrerios-compras-monitor').call({
+  estado: '',
+  tipoLicitacion: '',
+  organismo: '8',
+  anio: '',
+  palabra: '',
+  maxItems: 6000,
+  onlyNew: true,
+  eventTypes: ['NEW_LISTING', 'STATUS_CHANGE'],
+  dateRange: '',
+});
+
+const { items } = await client.dataset(run.defaultDatasetId).listItems();
+for (const item of items) {
+  console.log(`- [${item.event_type}] ${item.procedimiento} (${item.estado})`);
+}
+```
+
+A full runnable version (CommonJS) is at `examples/run-monitor.js` in this repo.
+
+## Input & Output Schema
+
+### Input
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -97,41 +183,7 @@ Leave every filter blank (`""`) to pull every organismo, estado, and tipoLicitac
 | `eventTypes` | array (enum) | all three | Which delta events to deliver when `onlyNew` is on: `NEW_LISTING`, `STATUS_CHANGE`, `CLOSED`. |
 | `dateRange` | string (enum) | `""` | Present for input-shape consistency with this developer's other monitor actors; has no effect on this source (see Known limitations). |
 
-### Output example
-
-```json
-{
-  "record_id": "a1e4f9c2d7b6803e5f18c4a9b2d6e701",
-  "procedimiento": "Solicitud De Cotizacion 54/2025",
-  "anioProcedimiento": "2025",
-  "objeto": "Adquisicion de insumos descartables para centros de salud del interior provincial",
-  "destino": "Direccion de Suministros - Ministerio de Salud",
-  "organismo": "Ministerio de Salud",
-  "estado": "Realizada",
-  "event_type": "STATUS_CHANGE",
-  "previousEstado": "En proceso de Evaluacion",
-  "scraped_at": "2026-09-08T09:15:42.118Z",
-  "is_new": false,
-  "source_url": "https://www.entrerios.gov.ar/contrataciones/licitaciones.php"
-}
-```
-
-`record_id` is a stable hash of `procedimiento + objeto + destino + organismo` — the source has no native row id, and `estado` is deliberately excluded from the hash so the same procedure keeps its id across status changes.
-
-## Instant Terminal Run (cURL)
-
-Runs synchronously and returns the resulting dataset items directly in the response - no polling needed. Get your token from [console.apify.com/settings/integrations](https://console.apify.com/settings/integrations).
-
-```bash
-curl -X POST "https://api.apify.com/v2/acts/oiXeFzZGlIQ6mKgoo/run-sync-get-dataset-items?token=<YOUR_API_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{
-  "maxItems": 50,
-  "onlyNew": true
-}'
-```
-
-## Sample Extracted Dataset (JSON)
+### Output
 
 One real record from this Actor's own dataset, matching `.actor/dataset_schema.json`:
 
@@ -152,13 +204,18 @@ One real record from this Actor's own dataset, matching `.actor/dataset_schema.j
 }
 ```
 
-## Pricing (Pay-Per-Event)
-
-| Event | Price | Charged when |
-| --- | --- | --- |
-| `result` | $0.003 per event | Once for every tender record delivered into the dataset. |
-
-Delta mode is what keeps a recurring monitor affordable: with `onlyNew: true`, an unchanged tender is filtered out before it is ever pushed to the dataset, so a scheduled run is billed only for records that are actually new, status-changed, or closed — never for re-confirming a tender nothing happened to.
+| Field | Description |
+| --- | --- |
+| `record_id` | A stable hash of `procedimiento + objeto + destino + organismo` — the source has no native row id, and `estado` is deliberately excluded from the hash so the same procedure keeps its id across status changes. |
+| `procedimiento` / `anioProcedimiento` | The tender's own procedure name/number, and the year it belongs to. |
+| `objeto` | What the tender is procuring. |
+| `destino` | The internal office or program the procurement is for. |
+| `organismo` | The issuing government body. |
+| `estado` | Current process status (e.g. "Proxima Apertura", "Realizada", "Fracasada"). |
+| `event_type` | `NEW_LISTING`, `STATUS_CHANGE`, `CLOSED`, or `UNCHANGED` (only surfaced when `onlyNew` is off). |
+| `previousEstado` | The `estado` this tender was last seen under; set only on a `STATUS_CHANGE` record. |
+| `scraped_at` / `is_new` | ISO timestamp of extraction, and whether this `record_id` was previously unseen. |
+| `source_url` | The Entre Rios public procurement listing page. |
 
 ## Why not just scrape it yourself
 
@@ -174,13 +231,26 @@ Delta mode is what keeps a recurring monitor affordable: with `onlyNew: true`, a
 - **No true `UPDATED` event.** `record_id` deliberately excludes `estado` so a status change keeps the same id, but a change to `procedimiento`, `objeto`, `destino`, or `organismo` is indistinguishable from a new listing, since the source issues no native row id to correlate old and new text against. Only `estado` changes are ever reported as `STATUS_CHANGE`.
 - **`CLOSED` is unfiltered-only.** It runs only when `estado`, `tipoLicitacion`, `organismo`, `anio`, and `palabra` are all left blank; on any filtered run it is skipped (and logged) rather than risk false positives.
 
-## Reliability & data integrity
+## Reliability & Delta Engine
 
 Cross-run identity is not held in ephemeral per-run storage — it lives in a named key-value store dedicated to this actor, which survives between scheduled runs. Each seen `record_id` is stored together with the `estado` it was last observed under, capped at the 10,000 most-recently-confirmed ids, comfortably above the current ~5,505-row backlog. Every outbound request goes through a shared retry helper with exponential backoff (up to 4 retries, 5 attempts total, starting at 1 second and doubling) on both network-level errors and any non-2xx HTTP response, so a transient failure on the province's own server doesn't silently drop a run.
 
-## Support
+## Contributing & Local Setup
 
-This actor is built and maintained by an independent developer, not a staffed vendor team — there is no dedicated support desk or contractual uptime SLA on offer. Questions, bugs, or source-coverage requests go through the Apify Store's Issues tab and are typically addressed within about 48 hours.
+This repository contains the Actor's real, buildable TypeScript source (`src/`), not just documentation:
+
+```bash
+git clone https://github.com/stefanoseggio/entrerios-compras-monitor.git
+cd entrerios-compras-monitor
+npm install
+apify login              # paste your Apify API token
+npm run start:dev        # tsx src/main.ts - runs the Actor locally against the real source
+npm test                 # vitest run
+```
+
+`npm run build` compiles with `tsc`, and `npm run lint` / `npm run format` run this repo's ESLint/Prettier config. Found a bug, or want a new filter, output field, or jurisdiction covered? Open an issue or pull request on this GitHub repo, or use the **Issues** tab on the [Apify Store listing](https://apify.com/stefano_seggio/entrerios-compras-monitor) for operational reports against the live Actor.
+
+This actor is built and maintained by an independent developer, not a staffed vendor team — there is no dedicated support desk or contractual uptime SLA on offer. Questions, bugs, or source-coverage requests are typically addressed within about 48 hours.
 
 ---
 
