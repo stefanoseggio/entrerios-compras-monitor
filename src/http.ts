@@ -1,13 +1,36 @@
+import { log } from 'apify';
+
 async function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => {
         setTimeout(resolve, ms);
     });
 }
 
+export class HttpError extends Error {
+    constructor(
+        public readonly status: number,
+        public readonly url: string,
+    ) {
+        super(`HTTP ${status} for ${url}`);
+        this.name = 'HttpError';
+    }
+}
+
+function isRetriableStatus(status: number): boolean {
+    return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
 // Native fetch(), no proxy needed - verified live 2026-09-04: reachable from
 // a plain datacenter IP (curl and fetch both succeed directly, 200 OK, no
 // TLS or network-level block encountered - unlike pba-tenders-monitor's and
 // cordoba-compras-monitor's targets).
+//
+// Retries with exponential backoff on network errors, timeouts, and
+// 408/425/429/5xx only - other non-2xx statuses (e.g. a malformed POST) are
+// deterministic and surface immediately as HttpError so the caller can
+// decide, rather than being retried pointlessly. Each attempt carries its
+// own AbortSignal timeout so a hung connection cannot stall the run past
+// timeoutMs on any single attempt.
 //
 // Returns the raw ArrayBuffer rather than parsed text: the response's real
 // bytes are Windows-1252, not the UTF-8 its own Content-Type header claims
@@ -18,18 +41,23 @@ export async function fetchWithRetry(
     init: RequestInit,
     maxRetries = 4,
     baseDelayMs = 1000,
+    timeoutMs = 45_000,
 ): Promise<ArrayBuffer> {
     let lastError: Error = new Error('unreachable');
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-            const response = await fetch(url, init);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return await response.arrayBuffer();
+            const response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+            if (response.ok) return await response.arrayBuffer();
+            if (!isRetriableStatus(response.status)) throw new HttpError(response.status, url);
+            lastError = new HttpError(response.status, url);
         } catch (error) {
+            if (error instanceof HttpError && !isRetriableStatus(error.status)) throw error;
             lastError = error instanceof Error ? error : new Error(String(error));
-            if (attempt < maxRetries) {
-                await sleep(baseDelayMs * 2 ** attempt);
-            }
+        }
+        if (attempt < maxRetries) {
+            const delay = baseDelayMs * 2 ** attempt;
+            log.debug(`Retrying ${url} in ${delay}ms after: ${lastError.message}`);
+            await sleep(delay);
         }
     }
     throw lastError;
