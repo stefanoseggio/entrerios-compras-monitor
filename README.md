@@ -261,7 +261,7 @@ One real record from this Actor's own dataset, matching `.actor/dataset_schema.j
   "previousEstado": null,
   "scraped_at": "2026-09-15T14:07:02.000Z",
   "is_new": true,
-  "source_url": "https://www.entrerios.gov.ar/compras/"
+  "source_url": "https://www.entrerios.gov.ar/contrataciones/licitaciones.php"
 }
 ```
 
