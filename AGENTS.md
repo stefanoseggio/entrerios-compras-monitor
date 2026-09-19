@@ -33,6 +33,22 @@ No proxy: reachable directly from this machine, 200 OK, ~0.3s for the full
 - `src/fetchTenders.ts` - builds the POST body from `ActorInput` and drives
   the above.
 
+## HTTP transport: `impit`, not the native `fetch`
+
+`src/http.ts`'s `fetchWithRetry` calls a module-level `Impit` instance
+(`new Impit({ browser: 'chrome' })`, from the `impit` package) instead of
+the global `fetch` - added 2026-09-19 as a fleet-wide TLS-fingerprint-
+hardening pilot (proactive hardening, not a bug fix - Node's `fetch` isn't
+deprecated). No test-mocking changes were needed for this actor: its only
+unit-level coverage of the fetch path (`test/delta.test.ts`) mocks
+`fetchWithRetry` itself (`vi.mock('../src/http.js', ...)`), never the
+global `fetch` or the `impit` module, so it was unaffected by the transport
+swap underneath. `test/fetchTenders.test.ts`'s live suite (real network,
+`describe.skipIf(process.env.CI)`) was re-run against the real
+`entrerios.gov.ar` portal after the swap and still passes - `impit`'s
+Chrome TLS/HTTP2 fingerprint round-trips cleanly against this host, same
+as the plain-PHP backend's behaviour under native `fetch`.
+
 ## Real, live-verified findings (2026-09-04) - corrections to the earlier recon pass
 
 The task's own recon notes said this endpoint holds "2042 rows" and that
