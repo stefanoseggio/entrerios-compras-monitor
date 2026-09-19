@@ -237,6 +237,49 @@ one that closes it).
 - State shape is NOT backward compatible with v1 (`{seenIds: string[]}` is
   treated as absent, not migrated) - see CHANGELOG.md.
 
+## Fetch-failure guard on CLOSED detection (2026-09-19)
+
+Found by code audit (not observed live): `isUnfilteredInput()` above closes the FILTERED-run
+false-positive, but leaves a second, distinct false-positive open on UNFILTERED runs
+themselves - the ones CLOSED detection is actually supposed to trust.
+
+**The gap:** `findClosed` (src/delta.ts) only ever sees `fetchedIds` - a `Set` built from
+whatever `parseTenders` returned. It has no way to tell a genuinely-empty backlog apart from a
+fetch that merely LOOKS empty: `fetchWithRetry` (src/http.ts) only checks `response.ok` (HTTP
+status), and `parseTenders` (src/parsers/table.ts:97, `$('#tabla-resultados tbody tr')`) reads
+"0 matching rows" the exact same way whether the register really is empty or the response body
+is a bot-check/interstitial page, a dropped-session response, or the documented
+GET-with-querystring "no hay informacion" trap shape (`fetchTenders.ts`) returned by mistake -
+`licitaciones_vacio.html` and `licitaciones_get_trampa.html` are, byte-for-byte in shape, the
+SAME ~9.4KB empty-state shell (checked directly: both contain `tabla-resultados` and nothing else
+that structurally tells a real zero-result page apart from the trap). Before this fix, any of
+those silently-failed-but-still-200-OK fetches on an unfiltered run would flow `fetchedIds =
+new Set()` (or near-empty) straight into `findClosed`, which would then correctly-by-its-own-
+contract report every one of the up-to-10,000 previously-tracked ids as CLOSED and
+`main.ts` would delete every one of them from persisted state in a single run - a total, silent
+loss of delta history, self-inflicted by a transient fetch problem rather than any real change
+in the register.
+
+**The fix:** `isSuspectedFetchFailure(previousTrackedCount, fetchedCount)` (src/delta.ts) is a
+sanity-check guard that `main.ts` now calls before `findClosed`, on unfiltered runs only. It
+compares this run's fetched row count against how many ids were already tracked in persisted
+state: once at least `SUSPECTED_FETCH_FAILURE_MIN_PREVIOUS` (20) ids are on record, a fetch that
+returns fewer than `SUSPECTED_FETCH_FAILURE_MIN_RATIO` (10%) of that count is flagged as a
+suspected fetch failure rather than a real mass closure - sized against this source's real,
+verified backlog shape (~5505 rows split across 4 estados, none of which plausibly empties out
+by 90%+ between two runs of the same schedule; see "Architecture" above). When flagged, `main.ts`
+logs a clear warning, skips `findClosed` entirely for that run, and pushes no `CLOSED` events -
+critically, this also means `mergeSeenEntries` never deletes those ids from state (only ids
+actually pushed as `CLOSED` are removed), so every previously-tracked id stays eligible and a
+future run with a healthy fetch will still correctly detect a REAL closure. A genuine, legitimate
+empty/near-empty day for a small or cold-start backlog (`previousTrackedCount` below the 20
+floor) is deliberately left alone - this guard only ever engages once there is a real backlog on
+record to contradict.
+
+This does not change behavior on the success path at all: a healthy fetch that returns
+comfortably more than 10% of the previously-tracked count (the normal case, every run) computes
+CLOSED exactly as before.
+
 ## Delta Engine retrofit (2026-09-06)
 
 Added `onlyNew` (delta mode) and `dateRange`, and standardized the output

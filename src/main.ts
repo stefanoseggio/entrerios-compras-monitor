@@ -1,7 +1,7 @@
 import { Actor, log } from 'apify';
 
 import { applyDateRangeFilter } from './dateRangeFilter.js';
-import { attachEnvelope, filterEventTypes, filterOnlyNew, findClosed, isUnfilteredInput } from './delta.js';
+import { attachEnvelope, filterEventTypes, filterOnlyNew, findClosed, isSuspectedFetchFailure, isUnfilteredInput } from './delta.js';
 import { fetchTenders } from './fetchTenders.js';
 import { loadDeltaState, mergeSeenEntries, saveDeltaState } from './state.js';
 import type { ActorInput, DatasetItem } from './types.js';
@@ -35,11 +35,30 @@ async function run(): Promise<void> {
     // filter, not actually gone - reporting it CLOSED in that case would be a false positive
     // (confirmed live: a follow-up run narrowed to estado=3 wrongly reported 37 records from
     // other estados as CLOSED). Skip CLOSED entirely on a filtered run rather than risk that.
+    const previousTrackedCount = Object.keys(previousState.entries).length;
     if (isUnfilteredInput(input)) {
-        const fetchedIds = new Set(rows.map((r) => r.record_id));
-        const closed = findClosed(previousState, fetchedIds, scrapedAt).map((record) => ({ ...record, is_new: false }));
-        items = [...items, ...closed];
-    } else if (Object.keys(previousState.entries).length > 0) {
+        // Guard against the fetch technically "succeeding" (HTTP 200, nothing thrown) while
+        // actually returning garbage: a bot-check/interstitial page, a dropped session, or the
+        // documented GET-with-querystring empty-state shape returned by mistake, all of which
+        // parseTenders reads as "0 rows" the same way it reads a real empty backlog (see
+        // isSuspectedFetchFailure's doc comment in delta.ts). Without this check, that 0 (or
+        // near-0) row count would flow straight into findClosed and every previously-tracked
+        // record would be reported CLOSED and dropped from state in one run - a real bug caught
+        // by code audit, not observed live yet. See AGENTS.md "Delta engine v2".
+        if (isSuspectedFetchFailure(previousTrackedCount, rows.length)) {
+            log.warning(
+                `SUSPECTED FETCH FAILURE, not a real mass closure: this unfiltered run returned only ${rows.length} ` +
+                    `licitacion(es) vs ${previousTrackedCount} previously-tracked record(s) (see isSuspectedFetchFailure ` +
+                    'in src/delta.ts). Skipping CLOSED detection entirely this run and leaving every previously-tracked ' +
+                    "id untouched in state - they are NOT being marked closed. If the source is genuinely down to that " +
+                    'few, a future run with a healthy fetch will report them CLOSED correctly then.',
+            );
+        } else {
+            const fetchedIds = new Set(rows.map((r) => r.record_id));
+            const closed = findClosed(previousState, fetchedIds, scrapedAt).map((record) => ({ ...record, is_new: false }));
+            items = [...items, ...closed];
+        }
+    } else if (previousTrackedCount > 0) {
         log.info('Skipping CLOSED detection this run: a filter is applied, so this fetch is not the full register. Run with no filters to enable it.');
     }
 
