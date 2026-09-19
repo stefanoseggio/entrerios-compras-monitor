@@ -22,7 +22,9 @@ vi.mock('../src/http.js', () => ({
 }));
 
 const { applyDateRangeFilter } = await import('../src/dateRangeFilter.js');
-const { attachEnvelope, filterEventTypes, filterOnlyNew, findClosed, isUnfilteredInput } = await import('../src/delta.js');
+const { attachEnvelope, filterEventTypes, filterOnlyNew, findClosed, isSuspectedFetchFailure, isUnfilteredInput } = await import(
+    '../src/delta.js'
+);
 const { fetchTenders } = await import('../src/fetchTenders.js');
 
 const EMPTY_STATE: DeltaState = { entries: {}, lastRunAt: '' };
@@ -84,6 +86,71 @@ describe('findClosed', () => {
     it('reports nothing closed when every previously-seen id is still present', () => {
         const state: DeltaState = { entries: { a: { estado: 'Realizada' } }, lastRunAt: '' };
         expect(findClosed(state, new Set(['a']), '2026-09-08T00:00:00.000Z')).toHaveLength(0);
+    });
+});
+
+describe('isSuspectedFetchFailure - guards findClosed against a fetch that only LOOKS like a real empty backlog', () => {
+    it('THE BUG: flags the exact scenario that used to flood false CLOSED events - a big previously-tracked backlog and a fetch that came back with nothing', () => {
+        // Simulates the real ~5505-row unfiltered backlog (see AGENTS.md) all being tracked from
+        // prior runs, then one run's fetch technically "succeeding" (no thrown error) while
+        // actually returning 0 rows - e.g. a bot-check page, a dropped session, or the
+        // documented GET-with-querystring empty-state shape returned by mistake (both real
+        // fixtures - licitaciones_vacio.html and licitaciones_get_trampa.html - are the SAME
+        // ~9.4KB "no hay informacion" shell with nothing that structurally tells them apart).
+        // Before this guard existed, this exact shape flowed straight into findClosed and
+        // reported all 5505 previously-tracked ids as CLOSED in one run.
+        const entries = Object.fromEntries(Array.from({ length: 5505 }, (_, i) => [`id${i}`, { estado: 'Realizada' }]));
+        expect(isSuspectedFetchFailure(Object.keys(entries).length, 0)).toBe(true);
+    });
+
+    it('also flags a dramatic-but-not-total drop with no plausible real-world explanation', () => {
+        // 5505 previously tracked, fetch returns only 12 this run (~0.2%) - far below the 10%
+        // floor. A real government tender register does not empty out by 99.8% between two runs
+        // of the same daily schedule; this is a fetch/parse failure, not a real mass closure.
+        expect(isSuspectedFetchFailure(5505, 12)).toBe(true);
+    });
+
+    it('does NOT flag a real, small day-to-day drop', () => {
+        // 5505 previously tracked, fetch returns 5480 (a handful of genuine real-world
+        // closures/updates) - comfortably above the 10% floor, must be trusted as real.
+        expect(isSuspectedFetchFailure(5505, 5480)).toBe(false);
+    });
+
+    it('does not flag a genuinely healthy, fully-populated fetch (no regression on the real success path)', () => {
+        expect(isSuspectedFetchFailure(5505, 5505)).toBe(false);
+    });
+
+    it('does not engage when there is no meaningful backlog on record yet (cold start / near-cold-start)', () => {
+        // A tiny previous state is too noisy to reason about with a ratio - and in practice only
+        // happens near cold start, where leaving a handful of ids untouched for one more run is
+        // harmless either way.
+        expect(isSuspectedFetchFailure(0, 0)).toBe(false);
+        expect(isSuspectedFetchFailure(5, 0)).toBe(false);
+        expect(isSuspectedFetchFailure(19, 0)).toBe(false);
+    });
+
+    it('DOES engage right at the documented floor of previously-tracked ids', () => {
+        expect(isSuspectedFetchFailure(20, 1)).toBe(true); // 1 < 20*0.1=2
+        expect(isSuspectedFetchFailure(20, 2)).toBe(false); // 2 is not < 2
+    });
+});
+
+describe('findClosed + isSuspectedFetchFailure integration - the guard must run BEFORE findClosed', () => {
+    it('confirms findClosed alone has no way to tell a real empty backlog apart from a failed fetch (why the guard is necessary)', () => {
+        // This documents the actual root cause: findClosed only ever sees the fetched-id set, so
+        // an empty set from a broken fetch is indistinguishable from an empty set because the
+        // backlog genuinely closed out. Callers (main.ts) MUST consult isSuspectedFetchFailure
+        // first and skip calling findClosed at all when it returns true - findClosed itself
+        // cannot and should not guess.
+        const entries = Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`id${i}`, { estado: 'Realizada' }]));
+        const state: DeltaState = { entries, lastRunAt: '' };
+
+        expect(isSuspectedFetchFailure(Object.keys(entries).length, 0)).toBe(true);
+        // Demonstrating what findClosed would still (correctly, by its own contract) do if a
+        // caller ignored the guard and called it anyway - this is exactly the flood the guard
+        // exists to prevent main.ts from acting on.
+        const wouldBeClosed = findClosed(state, new Set(), '2026-09-19T00:00:00.000Z');
+        expect(wouldBeClosed).toHaveLength(100);
     });
 });
 
