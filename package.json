@@ -1,6 +1,6 @@
 {
     "name": "entrerios-compras-monitor",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "type": "module",
     "description": "Extracts public tenders and contracting processes from the Province of Entre Rios, Argentina's Unidad Central de Contrataciones",
     "engines": {
