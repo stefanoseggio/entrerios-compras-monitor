@@ -215,6 +215,34 @@ one that closes it).
   Tucuman (ditto), Entre Rios has no independent identity key at all - the
   site itself has none (see "Architecture" above). So `estado` is the only
   field this actor can ever say "the SAME record changed" about.
+  - **Undisclosed-until-2026-09-19 sharper consequence, found by audit:** this
+    isn't just "a text-corrected row looks like a new listing" - on the very
+    next UNFILTERED run, the OLD record_id (absent from the fresh fetch
+    because its hash changed) is reported **CLOSED** by `findClosed`
+    (src/delta.ts) in the SAME run the corrected text produces a
+    **NEW_LISTING**. `mergeSeenEntries` then permanently deletes the old id
+    from state. The result is a false CLOSED+NEW_LISTING pair for a
+    procurement that never actually closed, not a single, relatively benign
+    "new listing". Source-side text corrections are real and observed on this
+    domain (see the Windows-1252 decode notes and the `En proceso de
+    Evaluación` mojibake below - the same kind of upstream data-quality fix
+    could just as easily land on `procedimiento`/`objeto`/`destino`/
+    `organismo` some day, even though today's known mojibake instance happens
+    to sit on `estado`, which the hash excludes).
+  - **Why this was NOT fixed by narrowing the hash this pass:** narrowing to
+    e.g. `procedimiento+organismo` would reduce (not eliminate) this risk for
+    typo-only corrections, but was judged too risky to ship without a state
+    migration this actor cannot honestly perform: `DeltaState.entries`
+    (src/state.ts) stores only `{estado}` per id, not the original
+    procedimiento/objeto/destino/organismo text the current hash was built
+    from. There is no way to re-hash every already-persisted id under a new
+    scheme, so switching schemes would itself trigger this exact
+    CLOSED+NEW_LISTING pair for the entire existing backlog (~5505 ids) in
+    one run - the same failure mode it's trying to prevent, just guaranteed
+    instead of occasional. A future pass could do this safely by first
+    shipping a migration that stores the raw fields (or a fields-hash) inside
+    `SeenEntry` for at least one full cycle, then cutting over. Until then,
+    this is a disclosed, accepted risk (see README "Known limitations").
 - **CLOSED is gated on `isUnfilteredInput()` - a real false-positive bug
   caught during cloud verification, not designed away upfront.** The
   design initially computed CLOSED against ANY run's fetch, reasoning

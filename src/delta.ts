@@ -95,6 +95,14 @@ export function isSuspectedFetchFailure(previousTrackedCount: number, fetchedCou
  * about a fetch that merely LOOKS like it returned the whole (now-empty) backlog when it
  * actually failed silently. Callers MUST check `isSuspectedFetchFailure` first and skip this
  * function entirely when it returns true - see its doc comment.
+ *
+ * Separately - a disclosed, accepted risk, not a bug in THIS function: because `record_id` is a
+ * hash of free-text fields (see stableId in src/parsers/table.ts and record_id's doc comment in
+ * types.ts), a silent upstream text correction to a still-open procurement changes its
+ * record_id, which makes the OLD id genuinely absent from `fetchedIds` here - this function
+ * correctly reports it CLOSED by its own contract, but that CLOSED is a false positive paired
+ * with a NEW_LISTING for the corrected row in the same run, not a real closure. See AGENTS.md
+ * "Delta engine v2" for why this isn't fixed by narrowing the hash in this pass.
  */
 export function findClosed(state: DeltaState, fetchedIds: ReadonlySet<string>, scrapedAt: string): TenderRecord[] {
     const closed: TenderRecord[] = [];
