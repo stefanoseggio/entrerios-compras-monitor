@@ -79,6 +79,21 @@ export function extractAnioProcedimiento(procedimiento: string): string | null {
     return match ? match[1] : null;
 }
 
+/**
+ * WARNING - disclosed, accepted risk, not a bug to "fix" casually (see
+ * AGENTS.md "Delta engine v2" and types.ts's `record_id` doc comment): this
+ * hashes 4 FREE-TEXT fields, not a source-issued id. A silent upstream
+ * correction to any of them (a typo fix, a re-punctuated `objeto`, the site
+ * eventually fixing one of its own known text-encoding corruptions - see
+ * decode.ts / normalizeEstadoText above) changes the hash, which surfaces as
+ * a false CLOSED + NEW_LISTING pair in src/delta.ts/main.ts, not just a "new
+ * listing", for a procurement that never actually closed. Narrowing this to
+ * fewer/more-stable fields (e.g. procedimiento+organismo) is NOT safe to do
+ * without first adding a state migration - src/state.ts's `SeenEntry` does
+ * not retain the source text a persisted id's hash was built from, so
+ * changing this function would itself mass-trigger the exact false
+ * CLOSED+NEW_LISTING failure across the whole existing tracked backlog.
+ */
 function stableId(procedimiento: string, objeto: string, destino: string, organismo: string): string {
     return createHash('sha1').update(`${procedimiento}|${objeto}|${destino}|${organismo}`).digest('hex');
 }

@@ -60,7 +60,20 @@ export interface ParsedTenderRow {
      * excludes `estado`, so the same real-world procedure keeps the same id
      * across its lifecycle (e.g. "En proceso de Evaluación" -> "Realizada")
      * instead of looking like a brand-new record every time its status
-     * changes. */
+     * changes.
+     *
+     * WARNING - disclosed, accepted risk (see AGENTS.md "Delta engine v2" ->
+     * "Undisclosed-until-2026-09-19 sharper consequence" and README "Known
+     * limitations"): because this hash covers `procedimiento`/`objeto`/
+     * `destino`/`organismo` (free text, not a source-issued id), a silent
+     * upstream correction to any of those 4 fields changes `record_id` and
+     * is reported as a false CLOSED (old id) + NEW_LISTING (new id) pair on
+     * the next unfiltered run for a procurement that never actually closed -
+     * not merely "looks like a new listing". Narrowing the hash was
+     * considered and rejected for this pass: `SeenEntry` (src/state.ts)
+     * doesn't retain the raw text a persisted id's hash was built from, so
+     * there is no safe migration path off the current fields without
+     * triggering this exact failure across the entire tracked backlog. */
     record_id: string;
     /** Raw "Procedimiento de Contratación" cell, e.g. "Solicitud De Cotizacion 54/2025". Kept as free text - see AGENTS.md for why it is not split into tipo/numero/anio. */
     procedimiento: string;
