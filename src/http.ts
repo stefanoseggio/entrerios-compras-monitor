@@ -1,4 +1,11 @@
 import { log } from 'apify';
+import { Impit, type RequestInit as ImpitRequestInit } from 'impit';
+
+// One Impit instance per actor run: it holds the connection pool and TLS
+// session cache, and gives every request a real, internally-consistent
+// Chrome TLS/HTTP2 fingerprint instead of Node's native (and distinctively
+// bot-shaped) one - see AGENTS.md for why this was added.
+const impit = new Impit({ browser: 'chrome' });
 
 async function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => {
@@ -20,9 +27,9 @@ function isRetriableStatus(status: number): boolean {
     return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
-// Native fetch(), no proxy needed - verified live 2026-09-04: reachable from
-// a plain datacenter IP (curl and fetch both succeed directly, 200 OK, no
-// TLS or network-level block encountered - unlike pba-tenders-monitor's and
+// No proxy needed - verified live 2026-09-04: reachable from a plain
+// datacenter IP (curl and fetch both succeed directly, 200 OK, no TLS or
+// network-level block encountered - unlike pba-tenders-monitor's and
 // cordoba-compras-monitor's targets).
 //
 // Retries with exponential backoff on network errors, timeouts, and
@@ -38,7 +45,7 @@ function isRetriableStatus(status: number): boolean {
 // `decodeWin1252` instead of `Response.text()`, which would assume UTF-8.
 export async function fetchWithRetry(
     url: string,
-    init: RequestInit,
+    init: ImpitRequestInit,
     maxRetries = 4,
     baseDelayMs = 1000,
     timeoutMs = 45_000,
@@ -46,7 +53,7 @@ export async function fetchWithRetry(
     let lastError: Error = new Error('unreachable');
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-            const response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+            const response = await impit.fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
             if (response.ok) return await response.arrayBuffer();
             if (!isRetriableStatus(response.status)) throw new HttpError(response.status, url);
             lastError = new HttpError(response.status, url);
